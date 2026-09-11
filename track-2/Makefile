@@ -1,4 +1,4 @@
-.PHONY: help prep generate check-data up down validate
+.PHONY: help prep generate check-data up down mcp validate
 .DEFAULT_GOAL := help
 
 help:
@@ -19,6 +19,9 @@ up: ## API on :8000, notebooks on :8888
 
 down:
 	docker compose down
+
+mcp: ## run the MCP server for an agent client (needs uv + prep/generate)
+	uv run --with-requirements requirements.txt python -m mcp_layer.server
 
 validate: ## check your claims.json before submitting: make validate CLAIMS=claims.json
 	python scripts/validate_submission.py --claims $(or $(CLAIMS),claims.json) $(if $(URL),--url $(URL),)

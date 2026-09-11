@@ -11,6 +11,9 @@ uvicorn[standard]
 pydantic
 slowapi
 
+# MCP layer (exposes the API to LLM agents)
+fastmcp
+
 # notebook and scripts
 jupyterlab
 requests
