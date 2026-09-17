@@ -10,10 +10,35 @@ The agent must identify the occurrence time, exact component, and one of the 15
 legal failure reasons. It must also write evidence for every case and remain
 within the judging limits.
 
+## Implementation Status
+
+The improved agent is not implemented yet. `track-1/starter/agents/routed.py`
+remains the current routed example and should be treated as the baseline for
+the work below.
+
+## Modification Boundary
+
+All implementation changes for this plan must be made only in
+`track-1/starter/agents/routed.py`. Treat `run.py`, `llm.py`, the baseline agent,
+and all other repository files as read-only references. Do not add a new agent
+module or modify shared infrastructure; keep the existing `solve(...)` contract
+and use the helpers already provided by the starter project.
+
+The first slice is complete only when it has:
+
+- No-model fallback for a clear deterministic leader.
+- Flash routing for uncertain candidate sets.
+- Strong-model escalation for low confidence, disagreement, invalid output, or
+  unresolved causality.
+- Exact candidate, reason, failure-count, and timestamp validation before
+  serialization.
+- Evidence generated from observed facts, including uncertainty and model
+  fallback events, without asking a model to invent measurements.
+
 ## 1. Protect the Existing Interface
 
 - Keep `starter/run.py` and its output contract intact.
-- Implement the improved agent as a new module under `starter/agents/`.
+- Implement the improved agent only in `starter/agents/routed.py`.
 - Use `format_prediction()` so keys remain in the required order.
 - Always emit exactly the number of failures stated in the instruction.
 - Always emit a best guess, even when confidence is low.
@@ -257,10 +282,22 @@ the deterministic fallback.
 Do early development on a small set:
 
 ```bash
-make dev N=20 AGENT=agents.<new_agent>
+make dev N=20 AGENT=agents.routed
 make score
 make cost
 ```
+
+Compare at least these two configurations on the same cases:
+
+```bash
+make dev N=20 AGENT=agents.routed
+RCA_MODEL=zai-org/GLM-5.2 make dev N=20 AGENT=agents.routed
+```
+
+Record strict and partial accuracy, mean and maximum wall time, dollars per
+case, and the number of model calls per case. Do not claim a routing win until
+the routed and single-model runs have been compared on the same data and the
+evidence files have been spot-checked.
 
 Then compare at least:
 
