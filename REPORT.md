@@ -43,6 +43,10 @@ The offline harness freezes original IDs/order, source hashes, resolved runtime 
 
 M5's 28 synthetic tests cover output field combinations, invalid/degraded rules, finite evidence, immutable rendering, missing/duplicate/unexpected cases, noncontinuous IDs, repeated usage, missing provider tokens, unpriced models, resume mappings, dry-run label stripping, comparison fairness and source replay. CLI help and a two-repetition real-query dry-run were executed with no model calls and no experiment directory created. The coordinating integration tests exercise the modules together and provider failures through local stubs; these are not real-provider quality measurements.
 
+The subsequently recorded complete integration suite **passed 123 tests in 72.002 seconds, including five real-data checks and no skipped tests**. Its real trace check explicitly returned partial coverage under its 30-second budget; a passing bounded-runtime test does not make that scan complete. The official submission validator also completed **two real cases with zero warnings**, confirming the required predictions/evidence shape. Those validator results do not establish diagnostic correctness or replace the development accuracy results above. Actual OpenAI-compatible SDK transport tests against localhost verified HTTP-200 error fallback and disabled hidden SDK retries; they made no external paid API calls. Sanitized transcripts are saved in [`eval/results/verification`](eval/results/verification).
+
+These counts describe that specific completed verification run. A later disclosure-only bypass regression was being added separately and is not included in the 123-test result; this report does not pre-claim its execution.
+
 Still unmeasured:
 
 - Same-agent single-GLM versus routed accuracy, actual paid cost, latency and repeat variance: no Featherless key was available for this session.
