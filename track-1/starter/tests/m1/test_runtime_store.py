@@ -143,6 +143,7 @@ class StoreTests(unittest.TestCase):
         q = self.query()
         self.assertEqual(self.read(q), [])
         self.assertEqual(self.store.coverage(q).status, "missing")
+        self.assertIsNone(self.store.coverage(q).missing_value_count)
         path = self.write("metric_container", [[BASE.timestamp(), "n.p-1", "cpu", 1]])
         cross = replace(q, end=BASE + timedelta(days=1))
         self.read(cross)

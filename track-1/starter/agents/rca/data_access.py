@@ -145,7 +145,7 @@ class CSVTelemetryStore:
 
     def _iterate(self, query, paths, deadline):
         qid = self.query_id(query)
-        cov = Coverage(qid, query.source, status="partial", missing_value_count=0)
+        cov = Coverage(qid, query.source, status="partial")
         self._coverage[qid] = cov
         identity = tuple((r, p.stat().st_size, p.stat().st_mtime_ns) if p.exists() else (r, None, None) for p, r in paths)
         # Catalog identity matters for service/mesh filtering, which is observation-dependent.
@@ -234,7 +234,7 @@ class CSVTelemetryStore:
                         output = frame.loc[:, list(query.columns) + list(LOCATORS)].reset_index(drop=True)
                         cov.rows_matched += len(output)
                         missing_values = output[list(query.columns)].isna() | output[list(query.columns)].eq("")
-                        cov.missing_value_count += int(missing_values.sum().sum())
+                        cov.missing_value_count = (cov.missing_value_count or 0) + int(missing_values.sum().sum())
                         first = datetime.fromtimestamp(float(output._timestamp_s.min()), UTC8)
                         last = datetime.fromtimestamp(float(output._timestamp_s.max()), UTC8)
                         cov.first_time = min(cov.first_time, first) if cov.first_time else first
