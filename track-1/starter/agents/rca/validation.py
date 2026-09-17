@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 import json
 from pathlib import PurePosixPath
+import re
 
 from run import format_prediction
 from .contracts import (Answer, CONTAINER_REASONS, Decision, LEGAL_REASONS,
@@ -18,9 +19,16 @@ FIELDS = ("datetime", "component", "reason")
 def _source_path(value):
     path = PurePosixPath(str(value).replace("\\", "/"))
     parts = path.parts
-    return (not path.is_absolute() and ".." not in parts and len(parts) == 4 and
-            parts[0] == "telemetry" and parts[2] in {"metric", "trace", "log"} and
+    valid = (not path.is_absolute() and ".." not in parts and len(parts) == 4 and
+            parts[0] == "telemetry" and re.fullmatch(r"\d{4}_\d{2}_\d{2}", parts[1]) is not None and
+            parts[2] in {"metric", "trace", "log"} and parts[3].startswith(parts[2] + "_") and
             parts[3] in {"metric_container.csv", "metric_node.csv", "metric_service.csv", "metric_runtime.csv", "metric_mesh.csv", "trace_span.csv", "log_service.csv", "log_proxy.csv"})
+    if valid:
+        try:
+            datetime.strptime(parts[1], "%Y_%m_%d")
+        except ValueError:
+            return False
+    return valid
 
 
 def validate_and_render(case, decision, evidence, catalog):

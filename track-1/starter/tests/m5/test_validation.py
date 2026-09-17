@@ -117,6 +117,10 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(result.validation_status, "invalid")
         self.record.source_files = ["../answers.csv"]
         self.assertEqual(self.render().validation_status, "invalid")
+        for source in ("telemetry/2022_99_01/metric/metric_container.csv", "telemetry/2022_04_01/trace/metric_container.csv"):
+            self.record.source_files = [source]
+            self.record.source_records = []
+            self.assertEqual(self.render().validation_status, "invalid")
 
     def test_ambiguous_order_disclosed_and_ordered(self):
         self.case.requested_fields = ("component",)
