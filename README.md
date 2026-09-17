@@ -1,5 +1,14 @@
 # MantisGrid Hackathon 2026
 
+## Team development — Track 1
+
+Start at [TEAM.md](TEAM.md) to claim one of the five modules, find its implementation
+specification and AI handoff prompt, and follow the shared interfaces and integration
+checks. The implementation source remains `track-1/starter/`. The module documents
+specify the team Agent to build; they do not claim it has already been implemented.
+
+## Official hackathon brief
+
 Two tracks. Pick one.
 
 | Track | The question | You build |
@@ -16,7 +25,7 @@ Each track's `README.md` is its brief. Start there.
 **https://forms.gle/UbPSwZhKNfkovM8s5**
 
 It asks for your team, your project title and track, a public repository with the
-commit you want judged, and a presentation of around four minutes showing the
+default branch to be judged, and a presentation of around four minutes showing the
 project working. Your track's `docs/submission.md` has the rest, including what the
 repository has to contain.
 
@@ -28,3 +37,12 @@ repository has to contain.
 ## The data is not in this repository
 
 Each track's README tells you how to get the data.
+
+## AI usage disclosure
+
+OpenAI Codex assisted with the five-module development specifications, shared
+interface contract, collaboration instructions and integration checklist in this
+repository. The existing starter contains the upstream heuristic and GLM-routing
+examples; this documentation change does not replace those implementations or
+constitute a new Agent evaluation. Runtime model usage is recorded per run; the
+submission report must describe the implementations and tools actually used.

@@ -1,5 +1,13 @@
 # Hybrid RCA Agent Implementation Plan
 
+## Five-person implementation entry point
+
+Use [TEAM.md](TEAM.md) to claim work. The five [module specifications](TEAM.md#1-认领一块完整交付不认领一个模糊主题),
+[rca-v1 shared interfaces](docs/INTERFACES.md), and [integration gates](docs/INTEGRATION.md)
+turn this strategy into concrete inputs, outputs, file ownership and acceptance checks.
+The strategy below is retained; the five-module specifications govern team boundaries.
+These documents describe implementation work, not a completed replacement Agent.
+
 ## Direction
 
 Build a hybrid root-cause analysis agent rather than copying OpenRCA or
@@ -36,11 +44,11 @@ Keep the official starter as the backbone. Evolve
 contract, `run.py`, usage accounting, prediction formatting, and failure
 handling.
 
-Every case must emit:
+Every case must emit the fields requested by its instruction:
 
 - Exactly the number of failures stated in the question.
-- Exact component names and one of the 15 legal reason strings.
-- A timestamp in the requested incident window, formatted through
+- Exact component names and one of the 15 legal reason strings when requested.
+- A timestamp, when requested, in the incident window, formatted through
   `format_prediction()`.
 - Evidence that uses observed facts and states uncertainty honestly.
 
@@ -73,9 +81,10 @@ space as evidence accumulates:
 
 ```text
 small service metrics
-        -> candidate shortlist
-        -> incident-window container/node metrics
-        -> traces and mesh edges
+        + broad, cheap container/node scan
+        + independent incident-window trace triage
+        -> combined candidate shortlist
+        -> detailed container/node comparisons and trace/mesh edges
         -> targeted logs
 ```
 
@@ -117,7 +126,10 @@ layer of the health-check design and supplies the shortlist.
 
 #### Container and node diagnosis
 
-Inspect detailed metrics only for shortlisted services and their neighbors.
+Use service summaries to prioritize, not to exclude components. A cheap broad
+container/node scan and independent trace triage must retain faults that do not
+move service aggregates. Then inspect detailed metrics for the combined
+shortlist and its neighbors.
 Prioritize CPU, memory, read I/O, write I/O, and process termination signals.
 
 Compare suspect containers with sibling replicas. Prefer a node-level cause
@@ -160,7 +172,9 @@ ERROR  timeout  connection  reset  refused
 OOM    killed   retry       unavailable
 ```
 
-Require fault-specific evidence before choosing among network reason labels.
+Require fault-specific evidence before claiming that network subtypes have been
+distinguished. If the evidence cannot distinguish them at the stopping point,
+still make a best legal prediction and state the unresolved subtype in evidence.
 
 ### 4. Rank Candidates with Simple Causal Features
 
@@ -292,19 +306,25 @@ hybrid agent on the same development cases. Add the official metric-only
 heuristic as a third configuration if time permits. Defer Flash-only,
 trace-only, and repeat-variance studies until the core comparison works.
 
-Run from `track-1/`, scoring and costing each run before the next run reuses
-`out/dev/`. Save each run's predictions, evidence, usage, and reports in a
-separate experiment directory before continuing:
+Use a new experiment directory from the start of each run. The following
+development commands run from the repository root; use the same case manifest
+for both configurations and inspect output completeness in addition to the
+official scorer. These are paid runs when the agent invokes models:
+
+`RCA_MODE` is part of the new controller contract to implement; the original
+starter does not yet use that setting. These commands target the integrated Agent.
 
 ```bash
-make validate AGENT=agents.routed
-make dev N=20 AGENT=agents.routed
-make score
-make cost
-# Archive out/dev/ and reports before the next run.
-RCA_MODEL=zai-org/GLM-5.2 make dev N=20 AGENT=agents.routed
-make score
-make cost
+env -u RCA_MODEL RCA_MODE=routed python track-1/starter/run.py \
+  --dataset track-1/data/Market-cloudbed-1 \
+  --queries track-1/data/Market-cloudbed-1/query.csv \
+  --out track-1/out/comparison-01/routed --agent agents.routed --limit 20
+RCA_MODE=routed RCA_MODEL=zai-org/GLM-5.2 python track-1/starter/run.py \
+  --dataset track-1/data/Market-cloudbed-1 \
+  --queries track-1/data/Market-cloudbed-1/query.csv \
+  --out track-1/out/comparison-01/single --agent agents.routed --limit 20
+# Score each predictions.csv with starter/score.py and price each usage.jsonl
+# with starter/cost.py. Use a NEW comparison directory for each repetition.
 ```
 
 `RCA_MODEL` currently pins model identity; it does not force a model call.
@@ -338,16 +358,22 @@ and propagation links. Evidence records include the source file, component or
 edge, time window, and measured values. Model responses select supplied
 candidate/reason IDs; deterministic code retains measured timestamps and facts.
 
-Suggested ownership for a four-person team:
+Five-person ownership is defined in [TEAM.md](TEAM.md):
 
-- **A — Metrics:** service health, robust scores, onset, persistence, replica and
-  node comparisons.
-- **B — Traces:** dependency graph, parent-child reconstruction, latency/error
-  propagation, and symptom penalties.
-- **C — Agent:** shared candidate schema, ranking integration, Flash routing,
-  strong escalation, JSON validation, and fallback.
-- **D — Logs and evaluation:** targeted searches, deterministic evidence,
-  benchmarks, and submission integration checks.
+- **M1 — Data and integration:** shared schemas, query access, time/identity,
+  runtime state, dependencies, entry point and Docker.
+- **M2 — Metrics and onset:** resource features, change intervals, persistence,
+  replica and node comparisons.
+- **M3 — Traces and logs:** independent trace candidates, dependency edges,
+  trace/network observations and targeted logs.
+- **M4 — Controller and routing:** candidate fusion/ranking, bounded follow-up,
+  confidence gating, GLM calls, fallback and actual-call accounting.
+- **M5 — Evidence and evaluation:** deterministic rendering, validation,
+  complete-denominator comparisons and the submission report.
+
+Only M4 orchestrates investigations. M2/M3 return observations; they do not start
+their own agent loops or choose final answers. Shared types are owned by M1 and
+specified once in `docs/INTERFACES.md`.
 
 Agree on the shared schema first, then integrate a working path through all six
 steps before adding detector sophistication.
