@@ -58,8 +58,18 @@ Windows, bundled Python, `python -m unittest discover -s tests/m3 -p 'test_*.py'
   the original values and all trace positioning samples resolve to their source
   records. This is not a claim of real-data accuracy or a Docker resource test.
 
-Zero model/API calls. Real log searches and real partial replay are not part of
-the automated real smoke above; synthetic replay and log behavior are verified.
-No mesh KPI expansion is included: available dependency and directed proxy-log
+Additional bounded manual checks against that first label-free case passed:
+
+- A real partial network record replayed exactly from input prefixes of 12,812
+  baseline and 40,217 incident records (10.093 s).
+- A directed real service-log search and replay completed in 11.704 s. Its
+  `cartservice-2` record had 7,816 searched rows and zero keyword matches, with
+  partial coverage explicitly retained. It made no health claim.
+- The returned sample at CSV data-record index 1,048,730 was independently
+  located with a CSV reader, confirming the original component and log ID.
+
+Zero model/API calls. These additional real checks do not replace the automated
+real smoke or establish root-cause accuracy. No mesh KPI expansion is included:
+available dependency and directed proxy-log
 tools are the network evidence sources. Real root-cause accuracy, unsampled path
 completeness, subtype identification and 2-CPU/8-GB performance remain unproven.
