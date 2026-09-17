@@ -1,357 +1,285 @@
-# RCA Agent Implementation Plan
+# Hybrid RCA Agent Implementation Plan
 
-## Goal
+## Direction
 
-Build a fast, cost-efficient root-cause analysis agent that uses deterministic
-telemetry analysis first, calls a cheap Featherless GLM for uncertain cases, and
-calls a stronger GLM only when the cheap result is genuinely ambiguous.
+Build a hybrid root-cause analysis agent rather than copying OpenRCA or
+ADS-KGRCA end to end:
 
-The agent must identify the occurrence time, exact component, and one of the 15
-legal failure reasons. It must also write evidence for every case and remain
-within the judging limits.
-
-## Implementation Status
-
-The improved agent is not implemented yet. `track-1/starter/agents/routed.py`
-remains the current routed example and should be treated as the baseline for
-the work below.
-
-## Modification Boundary
-
-All implementation changes for this plan must be made only in
-`track-1/starter/agents/routed.py`. Treat `run.py`, `llm.py`, the baseline agent,
-and all other repository files as read-only references. Do not add a new agent
-module or modify shared infrastructure; keep the existing `solve(...)` contract
-and use the helpers already provided by the starter project.
-
-The first slice is complete only when it has:
-
-- No-model fallback for a clear deterministic leader.
-- Flash routing for uncertain candidate sets.
-- Strong-model escalation for low confidence, disagreement, invalid output, or
-  unresolved causality.
-- Exact candidate, reason, failure-count, and timestamp validation before
-  serialization.
-- Evidence generated from observed facts, including uncertainty and model
-  fallback events, without asking a model to invent measurements.
-
-## 1. Protect the Existing Interface
-
-- Keep `starter/run.py` and its output contract intact.
-- Implement the improved agent only in `starter/agents/routed.py`.
-- Use `format_prediction()` so keys remain in the required order.
-- Always emit exactly the number of failures stated in the instruction.
-- Always emit a best guess, even when confidence is low.
-- Keep all component and reason strings exact.
-
-Checkpoint:
-
-```bash
-make validate AGENT=agents.<new_agent>
+```text
+deterministic telemetry analysis
+        -> trace-aware candidate ranking
+        -> cheap GLM only when ambiguous
+        -> strong GLM only for genuinely hard cases
+        -> deterministic validation and evidence
 ```
 
-## 2. Normalize and Index the Data
+The agent should imitate an SRE investigation:
 
-Create a preprocessing layer that reads each telemetry day once and exposes
-small, reusable summaries.
+1. Check overall service health.
+2. Diagnose suspicious containers or nodes.
+3. Trace the failure upstream and downstream.
+4. Search only the relevant logs and telemetry.
+5. Produce a constrained root-cause answer with measured evidence.
 
-- Parse all CSV data with a proper CSV reader.
-- Treat metric and log timestamps as seconds.
-- Treat trace timestamps as milliseconds.
-- Convert all displayed answer times to UTC+8.
-- Preserve raw timestamps and identifiers for evidence.
-- Parse container IDs such as `node-5.shippingservice-1` into node, container,
-  service, and replica fields.
-- Parse mesh IDs into both communication endpoints.
-- Normalize trace status values into success, error, and unknown while keeping
-  the original value.
-- Do not fill missing telemetry with zero automatically.
-- Handle constant metric series instead of discarding them.
-- Cache processed data by day, preferably in memory during a run or in Parquet
-  when preprocessing time is acceptable in the judged container.
+The highest-value work is metric onset detection, trace causality, candidate
+ranking, confidence-gated routing, and deterministic evidence generation.
 
-Build these indexes:
+## Scope and Interface
 
-- Container-to-node and container-to-service maps
-- Per-minute service health summaries
-- Per-minute container and node metric summaries
-- Per-minute mesh edge summaries
-- Log error counts and message templates by component
-- Trace summaries by trace, component, and parent-child edge
+Keep the official starter as the backbone. Modify only
+`track-1/starter/agents/routed.py` unless a narrowly scoped supporting change is
+required. Preserve the `solve(instruction, dataset_dir, ctx) -> Solution`
+contract, `run.py`, usage accounting, prediction formatting, and failure
+handling.
 
-Checkpoint: verify that one known timestamp from metrics, logs, and traces lands
-in the same UTC+8 incident window.
+Every case must emit:
 
-## 3. Parse Each Question Deterministically
+- Exactly the number of failures stated in the question.
+- Exact component names and one of the 15 legal reason strings.
+- A timestamp in the requested incident window, formatted through
+  `format_prediction()`.
+- Evidence that uses observed facts and states uncertainty honestly.
 
-Extract without an LLM:
+Do not add Harzoo, MCP, Phoenix, Parquet preprocessing, or a second agent
+framework to the critical runtime path. Plain Python helpers are sufficient for
+the hackathon.
 
-- Date
-- Start and end time
-- Failure count
-- Task type
-- Fields requested by that task
+## 1. Preserve the Starter and Submission Contract
 
-Reject or safely fall back when parsing fails. Never spend a model call on basic
-question parsing unless the deterministic parser has failed.
+- Keep `run.py` unchanged.
+- Keep the current routed agent entry point.
+- Parse the date, time range, failure count, and task fields deterministically.
+- Always return a best guess, even when every model is unavailable.
+- Validate model output against the current candidate set and legal reason set.
+- Fall back to the deterministic answer on malformed output or API failure.
 
-## 4. Detect Incident Onset
+Formatting mistakes can zero an otherwise correct case, so contract validation
+comes before any model improvement.
 
-Start with the small `metric_service.csv` file.
+## 2. Progressive Telemetry Narrowing
 
-- Detect the first sustained success-rate drop.
-- Detect the first sustained response-time increase.
-- Detect meaningful request-rate or count changes.
-- Compare the incident window with a baseline before and after it.
-- Prefer change-point onset over the largest peak.
+Do not build a full production preprocessing system first. Narrow the search
+space as evidence accumulates:
 
-Use these results to shortlist affected services and likely occurrence times.
+```text
+small service metrics
+        -> candidate shortlist
+        -> incident-window container/node metrics
+        -> traces and mesh edges
+        -> targeted logs
+```
 
-## 5. Reconstruct Causality from Traces
+Use proper CSV readers and respect the dataset traps:
 
-For traces in the incident window:
+- Metrics and logs use seconds; traces use milliseconds.
+- Displayed answer times are UTC+8.
+- Container IDs encode node and service relationships.
+- Mesh IDs encode source and destination in their names.
+- Missing data is not automatically zero.
+- Large trace and proxy files must be filtered to the incident window before
+  expensive analysis.
+
+Cache only lightweight per-day or per-case data that materially reduces repeat
+scans. Avoid building indexes whose cost exceeds the judging time budget.
+
+## 3. Six Core Analysis Steps
+
+### 3.1 Service triage and onset
+
+Start with `metric_service.csv` and compare the incident window with nearby
+baseline data. Inspect success rate, response time, request rate, and count.
+
+For each affected service, record:
+
+```text
+component
+anomaly type
+first sustained change
+persistence
+baseline contrast
+replica contrast
+```
+
+Prefer the first sustained change over the largest spike. This is the first
+layer of the health-check design and supplies the shortlist.
+
+### 3.2 Container and node diagnosis
+
+Inspect detailed metrics only for shortlisted services and their neighbors.
+Prioritize CPU, memory, read I/O, write I/O, and process termination signals.
+
+Compare suspect containers with sibling replicas. Prefer a node-level cause
+when several unrelated containers on the node change together and the node
+changes first. Prefer a container-level cause when one container changes first
+and explains the later aggregate signal.
+
+### 3.3 Trace and topology analysis
+
+Use `trace_span.csv` in the incident window to reconstruct a small causal graph:
 
 - Group spans by `trace_id`.
 - Join `parent_span` to `span_id`.
-- Reconstruct request order.
-- Find the earliest component with abnormal latency or errors.
-- Measure caller duration versus child duration.
-- Detect missing expected child spans.
-- Penalize components whose anomaly begins only after an upstream failure.
+- Track component, duration, status, and operation.
+- Compare parent duration with child duration.
+- Identify where abnormal latency or errors first appear.
+- Penalize components that become abnormal only after an upstream failure.
 
-Use traces to determine propagation order, not merely anomaly size.
+Use the graph to distinguish a root cause from a downstream symptom. A service
+with the largest anomaly is not necessarily the service that failed first.
 
-## 6. Run Targeted Fault Detectors
+### 3.4 Targeted network and log inspection
 
-Only inspect expensive telemetry for shortlisted services, components, nodes,
-and communication edges.
+Only inspect mesh and proxy data for candidate components and edges. Look for
+latency gaps, retries, resets, refused connections, timeouts, packet loss,
+retransmission, and corruption signals.
 
-### Container resource detector
+Search relevant service or proxy logs only after metric and trace narrowing.
+Simple patterns are sufficient initially:
 
-- Compare CPU, memory, read I/O, and write I/O with baseline behavior.
-- Compare a suspect container with sibling replicas.
-- Look for termination or abrupt telemetry disappearance.
+```text
+ERROR  timeout  connection  reset  refused
+OOM    killed   retry       unavailable
+```
 
-### Node detector
+Require fault-specific evidence before choosing among network reason labels.
 
-- Check whether multiple unrelated containers on one node degrade together.
-- Compare node anomaly onset with container anomaly onset.
-- Prefer a node cause when the node changes first and has multiple colocated
-  victims.
-- Prefer a container cause when one container changes first and explains the
-  later node aggregate.
+### 3.5 Candidate ranking
 
-### Application detector
+Represent each candidate with:
 
-- Count service-log errors and detect new error templates.
-- Use runtime metrics where available.
-- Look for long work inside destination spans.
+- Exact component and legal reason.
+- First-change time and persistence.
+- Direct supporting evidence.
+- Contradicting evidence.
+- Healthy replica and node comparisons.
+- Trace propagation position.
+- Downstream failures explained.
+- Confidence.
 
-### Network detector
+Rank with a simple interpretable score:
 
-- Inspect mesh counters for the affected source-destination edge.
-- Inspect proxy logs for retries, resets, refused connections, and timeouts.
-- Measure unexplained parent-child trace gaps.
-- Require fault-specific evidence before distinguishing latency, packet loss,
-  retransmission, and corruption.
+```text
+anomaly strength
++ early onset
++ trace support
++ replica contrast
++ node/container consistency
++ cross-telemetry agreement
++ downstream failures explained
+- downstream symptom penalty
+- contradictory evidence
+```
 
-## 7. Rank Evidence-Based Candidates
+Do not optimize weights before the features are working. For multiple-failure
+windows, separate independent propagation chains and return answers in
+chronological order instead of selecting the loudest N symptoms.
 
-Create a structured candidate object containing:
+### 3.6 Deterministic evidence and validation
 
-- Exact component name
-- Suggested legal reason
-- First change time
-- Direct supporting signals
-- Contradicting signals
-- Healthy-replica comparison
-- Node health comparison
-- Downstream effects explained
-- Confidence score
+Generate evidence directly from measured values. Include:
 
-Candidate scoring should reward:
+- Final answer and confidence.
+- Metric onset and baseline comparison.
+- Trace propagation and latency evidence.
+- Targeted log or network evidence when present.
+- Alternatives considered and why they were ruled out.
+- Missing telemetry, model failures, and remaining ambiguity.
 
-- Early onset
-- Direct fault-specific evidence
-- Agreement across telemetry types
-- Ability to explain downstream failures
-- Contrast with healthy replicas or nodes
+Never ask a model to invent measurements or write the authoritative evidence.
 
-Candidate scoring should penalize:
+## 4. Confidence-Gated GLM Routing
 
-- Late downstream symptoms
-- Evidence that applies only at service level
-- Conflicting telemetry
-- Missing support for the proposed reason
+### Level 1: no model
 
-For multiple-failure windows, cluster evidence into independent incident chains
-instead of selecting the top N correlated symptoms.
+Answer deterministically when the leader has a clear score margin, direct
+fault-specific evidence, consistent onset and propagation, and no major
+contradictions. This saves both time and cost.
 
-## 8. Add Confidence-Gated Model Routing
+### Level 2: cheap Flash model
 
-### Direct answer
+For uncertain cases, send a compact candidate summary rather than raw telemetry:
 
-Use no model when one candidate has strong direct evidence, a clear lead over
-the runner-up, consistent timing, and no major contradictions.
+```json
+{
+  "candidate_1": {
+    "component": "payment-0",
+    "reason": "container network latency",
+    "onset": "2022-03-20 09:08:42",
+    "supporting_evidence": ["earliest trace anomaly"],
+    "contradictions": ["CPU normal"]
+  }
+}
+```
 
-### Cheap-model decision
-
-Use the Flash tier for normal uncertain cases:
+Require JSON and constrain the answer to supplied candidates and legal reasons.
+Use the existing fallback-aware `LLM` wrapper and keep the cheap tier ordered:
 
 ```python
-FLASH = [
-    "zai-org/GLM-4.7-Flash",
-    "zai-org/GLM-5.3-Flash",
-]
+CHEAP = ["zai-org/GLM-4.7-Flash", "zai-org/GLM-5.3-Flash"]
 ```
 
-Send only a compact structured summary of the top candidates. Require JSON and
-constrain choices to supplied components and legal reasons.
+### Level 3: strong GLM
 
-### Strong-model escalation
+Escalate only when candidates are close, Flash confidence is low, Flash
+disagrees with deterministic ranking, node-versus-container causality is
+unclear, network subtype is unresolved, multiple failures overlap, or telemetry
+sources conflict.
 
-Use the strong tier only when:
-
-- The cheap model reports low confidence.
-- The cheap model disagrees with the deterministic leader.
-- The top candidates are close.
-- Node-versus-container causality is unresolved.
-- Network fault subtype is unresolved.
-- Evidence conflicts across telemetry sources.
-- Multiple failures overlap.
-- The cheap response is invalid.
+Provide the strong model with candidate summaries, causal order, supporting and
+contradicting evidence, and the Flash decision. Ask for a short constrained JSON
+answer:
 
 ```python
-STRONG = [
-    "zai-org/GLM-5.2",
-    "zai-org/GLM-5.1",
-]
+STRONG = ["zai-org/GLM-5.2", "zai-org/GLM-5.1"]
 ```
 
-Give the strong model the candidate summary, contradictions, causal order, and
-cheap-model decision. Request one short JSON decision rather than a long report.
+The 15 legal reasons make this a constrained classification problem, not an
+open-ended request to explain the incident.
 
-## 9. Handle Featherless Failures
+## 5. Reliability and Budget
 
-- Read `FEATHERLESS_API_KEY` and `FEATHERLESS_BASE_URL` from the environment.
-- Use `starter/llm.py` or preserve its usage accounting behavior.
-- Detect error objects returned with HTTP 200.
-- Retry a model briefly with backoff.
-- Fall back within the same model tier.
-- Stop offering a model after repeated capacity failures.
-- Fall back to the best deterministic answer if all calls fail.
-- Record the failure honestly in evidence without leaving the prediction blank.
+- Read credentials and endpoint from the environment through `llm.py`.
+- Let the existing wrapper retry briefly, fall back within a tier, and stop
+  retrying a model after repeated capacity failures.
+- Degrade to the deterministic candidate when all model calls fail.
+- Keep prompts compact and outputs short.
+- Avoid repeated scans of multi-gigabyte files.
+- Target substantially less than one minute per case on average.
+- Keep cost comfortably below the $1.25 judged-run average per case.
 
-## 10. Generate Evidence Cheaply
+## 6. Evaluation Plan
 
-Use a deterministic Markdown template rather than an expensive model.
+Compare configurations on the same development cases:
 
-Include:
+1. Existing metric-only heuristic.
+2. Improved deterministic telemetry and trace agent.
+3. Flash-only routing.
+4. Strong-only routing.
+5. Confidence-routed hybrid agent.
 
-- Final answer
-- Confidence level
-- Measured supporting evidence
-- Causal timing
-- Alternatives considered
-- Reasons alternatives were ruled out
-- Any unavailable or missing telemetry
-- Models used and fallback events
-
-Never invent measurements. Low-confidence evidence should clearly name the
-remaining ambiguity.
-
-## 11. Validate Every Prediction
-
-Before writing output, enforce:
-
-- Exact failure count
-- Key order: datetime, component, reason
-- Exact component name from the current dataset
-- One of the 15 exact legal reasons
-- Node components use node reasons
-- Container components use container reasons
-- UTC+8 timestamp inside the question window
-- Distinct and plausible answers for multiple failures
-- Evidence file exists
-
-If model output fails validation, repair it from constrained candidates or use
-the deterministic fallback.
-
-## 12. Evaluate Incrementally
-
-Do early development on a small set:
-
-```bash
-make dev N=20 AGENT=agents.routed
-make score
-make cost
-```
-
-Compare at least these two configurations on the same cases:
+At minimum compare the routed agent with:
 
 ```bash
 make dev N=20 AGENT=agents.routed
 RCA_MODEL=zai-org/GLM-5.2 make dev N=20 AGENT=agents.routed
-```
-
-Record strict and partial accuracy, mean and maximum wall time, dollars per
-case, and the number of model calls per case. Do not claim a routing win until
-the routed and single-model runs have been compared on the same data and the
-evidence files have been spot-checked.
-
-Then compare at least:
-
-1. Existing heuristic baseline
-2. Deterministic improved agent
-3. Flash-only agent
-4. Strong-only agent
-5. Confidence-routed agent
-
-For each configuration, record:
-
-- Strict and partial accuracy
-- Accuracy by task and difficulty
-- Fully solved cases
-- Dollars per case
-- Dollars per correct case
-- Runtime per case
-- Percentage of cases escalated
-- Accuracy of escalated and non-escalated cases
-- Repeat-run variance
-
-Hold out part of the 70-case development set while tuning thresholds. Categorize
-errors into timestamp, component, reason, node/container, network, multiple
-failure, and formatting failures.
-
-## 13. Tune for Judging Limits
-
-The judged run has 20 cases and only 20 minutes total.
-
-- Target well below one minute per case on average.
-- Set internal time limits below the external limits.
-- Avoid repeated scans of large CSV files.
-- Keep model prompts compact and outputs short.
-- Stop analysis early when evidence is conclusive.
-- Ensure a timeout still produces the best answer available.
-- Keep average model cost comfortably below $1.25 per case.
-
-## 14. Final Submission Checks
-
-Run:
-
-```bash
-make validate AGENT=agents.<new_agent>
-make dev AGENT=agents.<new_agent>
 make score
 make cost
-make docker AGENT=agents.<new_agent>
 ```
 
-Confirm that:
+Record strict and partial accuracy, accuracy by task and difficulty, fully
+solved cases, dollars per case, runtime, model calls, escalation rate, and
+repeat-run variance. Spot-check evidence against raw telemetry. Categorize
+errors as timestamp, component, reason, node/container, network, multiple
+failure, or formatting errors.
 
-- The improved agent is the default used by `run.py` in the submitted image.
-- Docker reads the dataset from `/data` and writes only to `/out`.
-- No development answer lookup or deployment-specific component mapping is used.
-- Every case writes a prediction and evidence file, even after model failure.
-- The final report compares routing with a single-model configuration using
-  accuracy, dollars, and runtime.
+## Definition of Done
+
+- The starter contract remains intact.
+- Easy cases can finish without a model.
+- Ambiguous cases use Flash before strong escalation.
+- Trace timing can distinguish root causes from downstream symptoms.
+- Logs and network telemetry are searched only for narrowed candidates.
+- Predictions contain the exact failure count, legal labels, and valid times.
+- Evidence is deterministic, measured, and explicit about uncertainty.
+- Model failures still produce a prediction and evidence file.
+- Routed versus single-model accuracy, cost, and runtime are documented.
