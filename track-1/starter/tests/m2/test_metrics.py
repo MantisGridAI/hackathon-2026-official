@@ -143,6 +143,19 @@ class MetricTests(unittest.TestCase):
         container = next(c for c in bundle.coverage if c.source == "metric_container")
         self.assertEqual(container.status, "partial")
         self.assertTrue(any("row cap" in warning for warning in bundle.warnings))
+        # Replay must use the original prefix even after the row cap is restored.
+        for record in bundle.evidence:
+            self.assertEqual(record.values, replay_evidence(record, self.store, deadline=time.monotonic() + 20))
+
+    def test_replay_rejects_insufficient_prefix_and_missing_prefix_metadata(self):
+        from copy import deepcopy
+        record = next(r for r in self.analyse().evidence if r.transform == BASE_TRANSFORM)
+        with self.assertRaises(ValueError):
+            replay_evidence(record, self.store, deadline=time.monotonic() - 1)
+        missing = deepcopy(record)
+        del missing.transform_params["retained_rows_per_query"]
+        with self.assertRaisesRegex(ValueError, "prefix length"):
+            replay_evidence(missing, self.store, deadline=time.monotonic() + 20)
 
     def test_node_single_sample_spike_is_distinct_from_sustained_load(self):
         start = self.case.start

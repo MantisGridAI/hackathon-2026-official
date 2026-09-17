@@ -77,25 +77,28 @@ def _query(case, source, components=None):
                      columns=columns, component_ids=components)
 
 
-def _read(store, query, deadline):
+def _read(store, query, deadline, *, retained_rows=None):
     """Consume a bounded window and always close its iterator (including deadlines)."""
     chunks, count, warnings = [], 0, []
+    row_limit = MAX_WINDOW_ROWS if retained_rows is None else retained_rows
+    if row_limit == 0:
+        return pd.DataFrame(columns=[*query.columns, "_source_file", "_record_index", "_timestamp_s", "_component_id"]), deepcopy(store.coverage(query)), []
     iterator = store.iter_window(query, deadline=deadline)
     try:
         for chunk in iterator:
             if time.monotonic() >= deadline:
                 warnings.append("metric scan deadline reached; retained samples have partial coverage")
                 break
-            remaining = MAX_WINDOW_ROWS - count
+            remaining = row_limit - count
             if len(chunk) > remaining:
                 chunks.append(chunk.iloc[:remaining].copy())
                 count += remaining
-                warnings.append(f"metric window row cap {MAX_WINDOW_ROWS} reached")
+                warnings.append(f"metric window row cap {row_limit} reached")
                 break
             chunks.append(chunk.copy())
             count += len(chunk)
-            if count >= MAX_WINDOW_ROWS:
-                warnings.append(f"metric window row cap {MAX_WINDOW_ROWS} reached")
+            if count >= row_limit:
+                warnings.append(f"metric window row cap {row_limit} reached")
                 break
     finally:
         close = getattr(iterator, "close", None)
@@ -203,7 +206,7 @@ def _resource_records(case, frame, query, coverage, families, deadline):
                   "component": str(component), "raw_cmdb_id": str(raw_id), "kpi_name": str(kpi),
                   "family": family, "semantics": METRIC_SEMANTICS.get(str(kpi), "unknown"),
                   "thresholds": dict(DEFAULTS), "duplicates": "median per timestamp",
-                  "max_window_rows": MAX_WINDOW_ROWS}
+                  "max_window_rows": MAX_WINDOW_ROWS, "retained_rows_per_query": [len(frame)]}
         values = _summary(group, params)
         record = _record(case, BASE_TRANSFORM, params, values, [query], [coverage], group,
                          [str(component)], _limitations(values, coverage))
@@ -268,7 +271,7 @@ def _service_records(case, frame, query, coverage, deadline):
             values_frame = group.rename(columns={field: "value"})
             params = {"service": str(service), "field": field, "start_s": case.start.timestamp(),
                       "end_s": case.end.timestamp(), "semantics": "unknown", "thresholds": dict(DEFAULTS),
-                      "max_window_rows": MAX_WINDOW_ROWS}
+                      "max_window_rows": MAX_WINDOW_ROWS, "retained_rows_per_query": [len(frame)]}
             values = _summary(values_frame, params)
             records.append(_record(case, SERVICE_TRANSFORM, params, values, [query], [coverage], group, [],
                 ["Service aggregates only prioritize inspection; they cannot exonerate an individual pod.",
@@ -395,6 +398,7 @@ def compare_replicas_and_node(case, component, store, *, deadline):
     queries = [_query(case, source, selected) for source in ("metric_container", "metric_node")]
     params = {"target": component, "relationships": {key: relations[key] for key in selected if key in relations},
               "series": [{"params": record.transform_params, "query_index": queries.index(record.queries[0])} for record in records],
+              "retained_rows_per_query": [max((record.transform_params["retained_rows_per_query"][0] for record in records if record.queries[0] == query), default=0) for query in queries],
               "max_window_rows": MAX_WINDOW_ROWS}
     limitations = ["Observed topology can be incomplete; unobserved replicas are not exonerated.",
                   "Same-node cochange supports a node hypothesis but does not establish causality.",
@@ -427,11 +431,14 @@ def replay_evidence(record, store, *, deadline):
     if record.transform not in {BASE_TRANSFORM, SERVICE_TRANSFORM, COMPARE_TRANSFORM}:
         raise ValueError(f"Unsupported metric transform: {record.transform}")
     frames = []
-    for query in record.queries:
-        frame, coverage, _ = _read(store, query, deadline)
+    retained = record.transform_params.get("retained_rows_per_query")
+    if retained is None or len(retained) != len(record.queries) or any(not isinstance(count, int) or count < 0 for count in retained):
+        raise ValueError("Metric replay requires the recorded input prefix length for every query")
+    for query, count in zip(record.queries, retained):
+        frame, coverage, _ = _read(store, query, deadline, retained_rows=count)
         frames.append(frame)
-        if coverage.status not in {"complete", "empty"}:
-            raise ValueError(f"Cannot verify metric evidence with {coverage.status} replay coverage")
+        if len(frame) != count:
+            raise ValueError(f"Metric replay retained {len(frame)} rows but requires the original {count}-row prefix ({coverage.status})")
     if record.transform == COMPARE_TRANSFORM:
         reconstructed = []
         for specification in record.transform_params["series"]:

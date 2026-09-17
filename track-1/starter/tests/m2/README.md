@@ -30,7 +30,7 @@ The other public functions are `inspect_metrics(case, component_ids, metric_fami
 
 ## Failure behavior and limits
 
-Missing, empty, partial, and deadline coverage is returned explicitly; none means healthy. Unknown topology is not guessed. Partial replay raises if its new query cannot complete, rather than claiming verification. Missing reference data yields descriptive evidence without an unsupported anomaly onset. Node cochange is `None` when node measurements cannot establish it.
+Missing, empty, partial, and deadline coverage is returned explicitly; none means healthy. Unknown topology is not guessed. Every transform records the exact retained input-prefix length per query. Replay uses that same prefix, including partial and row-capped input, and raises when the original prefix cannot be recovered. Missing reference data yields descriptive evidence without an unsupported anomaly onset. Node cochange is `None` when node measurements cannot establish it.
 
 Scans retain at most 250,000 matched window rows/source. Evidence retains at most 512 series/source, prioritizing one per observed component/family and then strength; truncation warns that recall is incomplete. Comparisons include at most 24 observed components. Real tested windows hit the evidence cap. Many resource candidates are expected; M4 owns cross-source ranking and exact fault count.
 
