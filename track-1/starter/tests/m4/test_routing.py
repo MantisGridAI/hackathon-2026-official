@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from helpers import case, response, state, Transport
+from tests.m4.helpers import case, response, state, Transport
 from agents.rca.routing import CHEAP, STRONG, Router, load_config, snapshot_usage, usage_delta
 from llm import LLM
 

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from helpers import bundle, candidate, case, evidence, response, state, Transport
+from tests.m4.helpers import bundle, candidate, case, evidence, response, state, Transport
 from agents.rca.contracts import AnalysisBundle, InvestigationResult, RenderedResult
 from agents.rca.controller import investigate
 from agents.rca.ranking import make_decision
