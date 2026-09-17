@@ -231,6 +231,10 @@ M1 建立并在 `ctx['rca_state']` 缓存 RunState；M4 提供 `agents.rca.routi
 
 M4 追加 `out/diagnostics/routes.jsonl`，每次实际 HTTP 尝试一条：`case_key, invocation_index, stage, requested_model, actual_model, reason, fallback, status, latency_s, prompt_tokens, completion_tokens, estimated_cost_usd`；未知 usage/cost 记 null 并保留保守预算预留，不编造 0。HTTP 失败与无模型 bypass 也有事件，区别 request 与 bypass。Solution.usage 用本题前后差量，不写累计 usage。M1 的 ctx invocation_index 与输入顺序用于离线映射；续跑另建 attempt manifest，不假定它等于 row_id。
 
+真实接口测试暴露 SDK inactivity timeout 不能约束整次请求，因此生产请求改用独立 Python 子进程执行 OpenAI-compatible JSON HTTP。父进程以 monotonic 总时限覆盖启动和网络等待，超时后终止并回收子进程；Windows 直接启动基础解释器以避免只终止 venv launcher。禁止 HTTP 重定向，响应最多 262,144 字节。没有进入 HTTP 尝试的初始化失败记录为 bypass；已尝试但超时且无 usage 的费用仍为 unknown，并保留预算预留，不能保证远端停止计费。
+
+发给模型的序列化 messages 总量最多 48,000 UTF-8 字节。压缩保留实际候选及其真实支持证据 ID，并声明省略；若提示仍超限则 bypass。该上限仅限制模型输入，完整结构化证据账本不因压缩而删减。压缩后的模型准确率需要单独实测，不能从字节缩减推导。
+
 在任何正常/降级/异常返回前，M4 solve 都从 RunState 账本独立结算本题最终 usage，覆盖提前保存的 fallback Decision 中的旧 usage_delta；模型建议即使没被采用，已经发生的调用仍计入。不能因选了调用前的 fallback 就把费用报成零。
 
 ## 7. Decision → RenderedResult → Solution

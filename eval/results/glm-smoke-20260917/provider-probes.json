@@ -1,0 +1,22 @@
+[
+  {
+    "requested_model": "zai-org/GLM-4.7-Flash",
+    "actual_model": "zai-org/GLM-4.7-Flash",
+    "error": "empty_content",
+    "latency_s": 2.656,
+    "prompt_tokens": 15,
+    "completion_tokens": 64,
+    "estimated_cost_usd": 2.6575000000000002e-05,
+    "purpose": "short availability probe; not an RCA quality result"
+  },
+  {
+    "requested_model": "zai-org/GLM-5.3-Flash",
+    "actual_model": "zai-org/GLM-5.3-Flash",
+    "error": null,
+    "latency_s": 3.547,
+    "prompt_tokens": 22,
+    "completion_tokens": 40,
+    "estimated_cost_usd": 2.33e-05,
+    "purpose": "short availability probe; not an RCA quality result"
+  }
+]

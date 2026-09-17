@@ -5,7 +5,8 @@
 Start at [TEAM.md](TEAM.md) to claim one of the five modules, find its implementation
 specification and AI handoff prompt, and follow the shared interfaces and integration
 checks. The implementation source remains `track-1/starter/`. The module documents
-specify the implemented five-module Agent. See [REPORT.md](REPORT.md) for measured
+specify the implemented five-module Agent. The [module implementation index](docs/modules/README.md)
+links each module to its code and tests. See [REPORT.md](REPORT.md) for measured
 checks and remaining real-model/container acceptance requirements.
 
 The default entry point now uses `agents.routed`. To run without model calls:

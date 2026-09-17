@@ -1,5 +1,4 @@
-"""Real SDK over local synthetic HTTP; no external model or billing is involved."""
-import importlib.util
+"""Production transport over local synthetic HTTP; no external model or billing."""
 import json
 import os
 from pathlib import Path
@@ -17,8 +16,7 @@ from agents.rca.runtime import parse_case
 from llm import LLM
 
 
-@unittest.skipUnless(importlib.util.find_spec("openai"), "Install requirements.txt to exercise the real SDK on localhost")
-class SDKIntegrationTests(unittest.TestCase):
+class HTTPIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.requests = []
         self.reply = lambda request: (200, {"error": {"message": "synthetic capacity error"}})
@@ -53,7 +51,7 @@ class SDKIntegrationTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
 
-    def test_sdk_error_body_and_router_family_fallback(self):
+    def test_error_body_and_router_family_fallback(self):
         def reply(request):
             if len(self.requests) == 1:
                 return 200, {"error": {"message": "busy"}}
@@ -77,7 +75,7 @@ class SDKIntegrationTests(unittest.TestCase):
             self.assertEqual(state.usage_ledger[CHEAP[1]]["prompt_tokens"], 12)
             state.client.client.close()
 
-    def test_sdk_has_no_hidden_retry(self):
+    def test_transport_has_no_hidden_retry(self):
         self.reply = lambda request: (503, {"error": {"message": "synthetic unavailable"}})
         client = LLM()
         try:

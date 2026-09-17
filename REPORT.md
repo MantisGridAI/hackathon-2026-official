@@ -1,13 +1,15 @@
 # Track 1: bounded, evidence-backed RCA agent
 
-The five-module agent is implemented in the official `track-1/starter/` runtime. It reads only whitelisted telemetry, builds replayable metric/trace/log observations, ranks bounded hypotheses, optionally asks permitted GLM models to select among those hypotheses, and deterministically renders the requested answer fields and four evidence sections. The available real measurements show a working integration with limited diagnostic accuracy. A paid routing-versus-single-model result and Docker acceptance remain unmeasured.
+The five-module agent is implemented in the official `track-1/starter/` runtime. It reads only whitelisted telemetry, builds replayable metric/trace/log observations, ranks bounded hypotheses, optionally asks permitted GLM models to select among those hypotheses, and deterministically renders the requested answer fields and four evidence sections. The available real measurements show a working integration with limited diagnostic accuracy. A small paid same-agent comparison exposed oversized prompts and request-deadline defects; Docker acceptance remains unmeasured.
 
 ## Actual development results
 
-| Experiment | Planned / returned | Official mean partial | Fully solved | External elapsed | Actual model requests |
-|---|---:|---:|---:|---:|---:|
-| Deterministic integration, original IDs 0, 1, 4, 5, 6, 8, 9, 25 | 8 / 8 | 0.1775 | 0 / 8 | 245.609 s | 0 |
-| Native resource check, original IDs 0, 1 | 2 / 2 | 0.0 | 0 / 2 | 59.765 s | 0 |
+| Experiment | Planned / returned | Official mean partial | Fully solved | External elapsed | Actual model requests | Estimated cost |
+|---|---:|---:|---:|---:|---:|---:|
+| Deterministic integration, original IDs 0, 1, 4, 5, 6, 8, 9, 25 | 8 / 8 | 0.1775 | 0 / 8 | 245.609 s | 0 | $0 |
+| Native resource check, original IDs 0, 1 | 2 / 2 | 0.0 | 0 / 2 | 59.765 s | 0 | $0 |
+| Same-agent single GLM-5.2, original IDs 6, 25 | 2 / 2 | 0.335 | 0 / 2 | 201.875 s | 2 | $0.4137852 |
+| Same-agent routed, original IDs 6, 25 | 2 / 2 | 0.500 | 1 / 2 | 306.718 s | 2 | $0.019789005 |
 
 The eight-case run used code revision `3172a081366080512261771e38ab96e3feaab6ef`. Cases were chosen as the first occurrence of each task type plus a multiple-failure case, using label-free instructions rather than development answers. This is a small public-development integration sample, not a 70-case development benchmark, independent holdout, or hidden-test result. The official evaluator was not changed. One repetition was run, so variance is unmeasured. Per-case elapsed time averaged 30.6275 seconds, median 30.975, maximum/p95 31.77; the external timer also includes startup and saving. Eight bypass events and zero actual HTTP requests establish zero runtime model cost for this deterministic run. This does not establish routing savings or model quality.
 
@@ -16,6 +18,16 @@ All eight original row IDs were present exactly once. There were no unexpected I
 The two-case native resource check used code revision `9acaa72` and observed the actual Python interpreter pinned to two logical CPUs. Peak observed RSS was 261,902,336 bytes (249.77 MiB), sampled every 200 ms; an 8 GiB process-memory guard did not terminate the run. External time was 59.765 seconds. This is a native Windows measurement, not a Docker/cgroup guarantee. The earlier eight-case monitor observed a launcher rather than its interpreter child; its peak RSS and enforced CPU limits are therefore explicitly unverified and are not reported as resource acceptance.
 
 Artifacts with actual run manifests/source hashes, generated predictions, audited case counts, and resource observations are in [`eval/results`](eval/results). Raw telemetry and full structured ledgers are deliberately excluded. Later correctness fixes to audit/replay/rendering do not retroactively change the frozen runtime source revision of either experiment.
+
+## Limited authenticated comparison
+
+The user authorized at most two short provider probes, then one single-model and one routed run on original IDs 6 and 25. Both configurations used frozen revision `7bc31e71d0b02aa44bef5c7da004dee68fa4f62b`, the same tools, case order, source hashes, dataset identity, official price table and budget policy. Single-model pinned GLM-5.2; routed selected GLM-4.7-Flash. Both completed both planned cases with valid row/evidence integrity. The one sequential, single-model-first repetition leaves variance and operating-system cache effects uncontrolled; these are public development cases, not an independent holdout.
+
+There were **six real HTTP attempts in total**: two probes and four case requests, below the authorized maximum of 18. The GLM-4.7-Flash probe returned token usage but empty content; the GLM-5.3-Flash probe succeeded. Both probe costs count, totaling $0.000049875. Including probes, observed usage was 579,360 input and 4,386 output tokens, with **$0.43362408 estimated total cost** and no unknown-usage calls. Costs apply the frozen official Track 1 prices to provider-reported usage; they are not an account billing receipt. The probe requests are separate from each configuration's RCA accuracy and latency, and took 6.203 seconds combined. Credentials were supplied only through the process environment and were not saved with artifacts.
+
+Three of the four case responses had empty content, including **both routed responses**. The single-model arm accepted one candidate-selection response. Routed answers therefore came entirely from deterministic fallback: its higher score cannot be attributed to useful model reasoning or successful escalation. Neither arm exercised cross-model fallback or a strong-stage request, because model requests consumed the remaining case time. Time-bounded telemetry can also retain different scan prefixes across runs. The cost figures describe this sample; they do not establish general routing savings at equal quality.
+
+The four prompts contained 143,437–146,240 provider input tokens. Requests lasted 68.860–129.297 seconds despite a configured request timeout of at most 20 seconds; case times were 97.37–157.89 seconds, exceeding the 45-second internal soft target. These observations showed that the SDK inactivity timeout was insufficient as an absolute request deadline and that per-field prompt truncation was insufficient as a total-size bound. Subsequent corrections are verified separately below; their effects are not credited to this frozen paid run. Compact manifests, scores, predictions, routes, usage and inclusive spending are saved in [`eval/results/glm-smoke-20260917`](eval/results/glm-smoke-20260917). Raw development-answer strings are removed from exported audit summaries.
 
 ## Evidence audit
 
@@ -43,17 +55,21 @@ The offline harness freezes original IDs/order, source hashes, resolved runtime 
 
 M5's 28 synthetic tests cover output field combinations, invalid/degraded rules, finite evidence, immutable rendering, missing/duplicate/unexpected cases, noncontinuous IDs, repeated usage, missing provider tokens, unpriced models, resume mappings, dry-run label stripping, comparison fairness and source replay. CLI help and a two-repetition real-query dry-run were executed with no model calls and no experiment directory created. The coordinating integration tests exercise the modules together and provider failures through local stubs; these are not real-provider quality measurements.
 
-The subsequently recorded complete integration suite **passed 123 tests in 72.002 seconds, including five real-data checks and no skipped tests**. Its real trace check explicitly returned partial coverage under its 30-second budget; a passing bounded-runtime test does not make that scan complete. The official submission validator also completed **two real cases with zero warnings**, confirming the required predictions/evidence shape. Those validator results do not establish diagnostic correctness or replace the development accuracy results above. Actual OpenAI-compatible SDK transport tests against localhost verified HTTP-200 error fallback and disabled hidden SDK retries; they made no external paid API calls. Sanitized transcripts are saved in [`eval/results/verification`](eval/results/verification).
+At revision `7bc31e7`, the complete integration suite **passed 125 tests in 74.600 seconds, including five real-data checks and no skipped tests**. This includes both operational-bypass disclosure regressions. Its real trace check explicitly returned partial coverage under its 30-second budget; a passing bounded-runtime test does not make that scan complete. The official submission validator also completed **two real cases with zero warnings**, confirming the required predictions/evidence shape. Those validator results do not establish diagnostic correctness or replace the development accuracy results above. Actual OpenAI-compatible SDK transport tests against localhost verified HTTP-200 error fallback and disabled hidden SDK retries; they made no external paid API calls. Sanitized transcripts, including the earlier 123-test run, are saved in [`eval/results/verification`](eval/results/verification).
 
-These counts describe that specific completed verification run. A later disclosure-only bypass regression was being added separately and is not included in the 123-test result; this report does not pre-claim its execution.
+These counts describe the stated completed verification revision, before the corrections motivated by the paid experiment.
+
+The correction in runtime revision `cf3c4b5` replaces the production SDK call with a standard-library OpenAI-compatible HTTP worker. The parent enforces an absolute monotonic deadline covering worker startup and network activity, then terminates and reaps the direct interpreter process; it does not leave a local background request running. Redirects are refused and response reads are capped at 262,144 bytes. An interrupted request can still incur remote charges, so missing provider usage remains unknown with its budget reservation retained. Startup failures before the request marker are distinguished from attempted HTTP calls. The final integrated suite then **passed all 133 tests in 74.747 seconds, including all five real-data checks, with no skips**. The transcript is [`final-full-tests-133.txt`](eval/results/verification/final-full-tests-133.txt).
+
+Serialized model messages now have a global limit of **48,000 UTF-8 bytes**, with candidate IDs, genuine displayed support IDs, and explicit omission information. The complete local evidence ledger is unchanged. Local HTTP regression tests cover a trickling response that stays below the inactivity timeout but exceeds the total deadline, worker startup stalling, HTTP failures, and unknown-usage accounting. The new eight prompt/transport tests also passed independent review and execution. Two offline reconstructions of saved decision shortlists retained all 12 original offered candidate IDs each while staying below the cap; they are not exact replays of the original full prompts because those candidate features were not persisted. See [`tests/m4/TRANSPORT_CHECK.md`](track-1/starter/tests/m4/TRANSPORT_CHECK.md). No further paid calls were made to test this correction, so its real-provider accuracy and latency remain unmeasured.
 
 Still unmeasured:
 
-- Same-agent single-GLM versus routed accuracy, actual paid cost, latency and repeat variance: no Featherless key was available for this session.
+- Repeat variance, broader routing quality/cost tradeoffs, and paid-provider behavior after the subsequent prompt/deadline corrections. The authorized two-case comparison was not expanded or rerun.
 - Docker build/run under enforced 2 CPU / 8 GB container constraints: Docker was unavailable. Native measurements are reported separately.
 - Full 70-case development accuracy, held-out deployment accuracy, calibrated confidence and causal explanation review.
 
-Reproduce the comparison plan with `python eval/run_comparison.py --help` and the dry-run command in [`eval/README.md`](eval/README.md). Actual model runs require the supplied Featherless endpoint/key and a new output directory. No claim of measured routing savings is made here.
+Reproduce the comparison plan with `python eval/run_comparison.py --help` and the dry-run command in [`eval/README.md`](eval/README.md). Actual model runs require the supplied Featherless endpoint/key and a new output directory. The small measured cost difference above is not a general routing-savings claim.
 
 ## AI and source disclosure
 

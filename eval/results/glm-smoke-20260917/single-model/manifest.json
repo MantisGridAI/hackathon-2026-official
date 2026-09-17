@@ -1,0 +1,130 @@
+{
+  "schema_version": "experiment.v1",
+  "experiment_id": "comparison",
+  "created_utc": "2026-09-17T19:43:45.597805+00:00",
+  "code_revision": "7bc31e71d0b02aa44bef5c7da004dee68fa4f62b",
+  "source_hashes": {
+    "track-1/starter/agents/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "track-1/starter/agents/heuristic.py": "b443ecd8f8a51faafd0fa319529a50e03df7cb6f3e3fbb6bafc829b6c1dbfe17",
+    "track-1/starter/agents/rca/__init__.py": "39deee12760275a716bc3977c37a41e19a3a0f1587d1cc8213cba8a7aad72eb8",
+    "track-1/starter/agents/rca/contracts.py": "43bf5f48b93d4215716708a79cfbd24dea65cdf4620072446f2862882b8ba39c",
+    "track-1/starter/agents/rca/controller.py": "12ac3d43b336ad659689d7db36618e3ffa61d6273bcb1b342c5478f11fd86e39",
+    "track-1/starter/agents/rca/data_access.py": "7512fc59d430ab101a3c31f356155adbdefadbd121269582db8c99fe2c4f51cd",
+    "track-1/starter/agents/rca/evidence.py": "4b25ab68e815abc53e055a3a35af401177cf1bd33984f402e6db770391d5983a",
+    "track-1/starter/agents/rca/logs.py": "041a7ab116124a8e166f5593cfdf95ec86ba9048e719421fe65c1f97b876d8f0",
+    "track-1/starter/agents/rca/metrics.py": "ef0358f6d46425e5c528aa60f904ebf36454633f7e4bc747eeeaedef5dc5822f",
+    "track-1/starter/agents/rca/network.py": "0d000bd4fbf333a8b649ce53dd2ac617fc0757db550a3468d0c6f81fc1d3267d",
+    "track-1/starter/agents/rca/onset.py": "0519baa090cf782277a2ffab5f97f4163469c58ba951db1654e5892113c3a0ef",
+    "track-1/starter/agents/rca/prompts.py": "f119efb4789fab51af7b5fbf34e9a85b95d496fbb7fdb9cd6d409c31af995c53",
+    "track-1/starter/agents/rca/ranking.py": "90f818a9689c06f102963fe7cdb173a99fb40c80f98fad13402ddf5a49769b29",
+    "track-1/starter/agents/rca/routing.py": "1d569e9fe37b1de1d81352a7312209f5b89c9a2e2e6820b1f1a458be8c0cc5cf",
+    "track-1/starter/agents/rca/runtime.py": "6699650de7bd9ad2729869e214a42cba8f2a4d246171bd831fd91858e687620d",
+    "track-1/starter/agents/rca/traces.py": "8759b120f493622e702ced2c55528dfaaf09d61742b1e8a49fad166c1964fbbc",
+    "track-1/starter/agents/rca/validation.py": "ad672c30b48d76960a28c42da91ba4567b7f1be85716f5ba960d769bd5cc1618",
+    "track-1/starter/agents/routed.py": "62a21afc81f2d38f42688f94c3b6f001537b6e52f017e9277d2c49d75fb594ac",
+    "track-1/starter/cost.py": "74e5802bea5d36f4ed20ebbdce3c47b4cb2c31cb42d5641e540fdea9a70074a9",
+    "track-1/starter/llm.py": "f843e15534fd0e31abe5d3b20c5972ca2b6ab8c6b7634d526d03a9e5051a91db",
+    "track-1/starter/requirements.txt": "405775dd866c699c30b3d08d93dc4fd04df085e3b1fcbf643a6bfdbc12f8209e",
+    "track-1/starter/run.py": "c74e7a9d4c0832ad35cd5a5ad18bc0ee8a20893f7df9ef54be684311031794b9",
+    "track-1/starter/score.py": "37c4a07471a2af66a09251dbe1b51cfb42a1fadc49a0b627edd9125ba7424e31"
+  },
+  "config_id": "single-model",
+  "config": {
+    "schema_version": "rca-v1",
+    "mode": "routed",
+    "pinned_model": "zai-org/GLM-5.2",
+    "reference_minutes": 10,
+    "case_soft_seconds": 45.0,
+    "run_soft_seconds": 1080.0,
+    "case_cost_limit_usd": 2.5,
+    "run_cost_limit_usd": 20.0,
+    "max_followups": 1,
+    "max_model_stages": 2,
+    "max_http_attempts_per_case": 4
+  },
+  "config_hash": "66d924ff1d299e85d6c816c95c86dc110ff34f8be73cadc0e21d51f54753de13",
+  "budget_policy": {
+    "schema_version": "rca-v1",
+    "reference_minutes": 10,
+    "case_soft_seconds": 45.0,
+    "run_soft_seconds": 1080.0,
+    "case_cost_limit_usd": 2.5,
+    "run_cost_limit_usd": 20.0,
+    "max_followups": 1,
+    "max_model_stages": 2,
+    "max_http_attempts_per_case": 4
+  },
+  "planned_row_ids_in_order": [
+    6,
+    25
+  ],
+  "invocation_rows": {
+    "1": 6,
+    "2": 25
+  },
+  "case_keys_by_row_id": {
+    "6": "925b67ad06d522ae",
+    "25": "d78cd53bdb510522"
+  },
+  "query_hash": "c7888b444134d975b49c15eaf41de6407e80432804e234fdaeac37b77da024a1",
+  "input_query_file_sha256": "ba8bcd6926fd414de67f7139112c9223756f0a144bc7b4fcb87c911a115cf990",
+  "repetition": 1,
+  "dataset_identity": {
+    "bundle_name": "Market-cloudbed-1",
+    "manifest_sha256": "997866a8dc739b7162c7d91d64a1e837a13d778e1b969998a1bbd8dab286db7c",
+    "label_free_query_sha256": "ba8bcd6926fd414de67f7139112c9223756f0a144bc7b4fcb87c911a115cf990",
+    "telemetry_content_hash_status": "not computed; official bundle manifest identity only"
+  },
+  "price_table_revision": "official-track1-models-2026-09-17",
+  "price_table": {
+    "zai-org/GLM-4.7-Flash": [
+      0.065,
+      0.4
+    ],
+    "zai-org/GLM-5.3-Flash": [
+      0.15,
+      0.5
+    ],
+    "zai-org/GLM-4.6": [
+      0.55,
+      2.2
+    ],
+    "zai-org/GLM-4.7": [
+      0.55,
+      2.2
+    ],
+    "zai-org/GLM-5": [
+      0.95,
+      3.15
+    ],
+    "zai-org/GLM-5.1": [
+      1.3,
+      4.3
+    ],
+    "zai-org/GLM-5.2": [
+      1.4,
+      4.4
+    ]
+  },
+  "cache_condition": "new process per run; operating-system cache uncontrolled",
+  "hardware_limits": "host execution; no CPU/memory container limits measured",
+  "tuning_status": "public development data; not hidden-test or independent holdout performance",
+  "runner_command": [
+    "<repo>\\.venv\\Scripts\\python.exe",
+    "<repo>\\track-1\\starter\\run.py",
+    "--dataset",
+    "<repo>\\track-1\\data\\Market-cloudbed-1",
+    "--queries",
+    "<repo>\\out\\glm-smoke-20260917\\comparison\\single-model\\rep-01\\queries.csv",
+    "--out",
+    "<repo>\\out\\glm-smoke-20260917\\comparison\\single-model\\rep-01",
+    "--agent",
+    "agents.routed"
+  ],
+  "output_dir": "<repo>\\out\\glm-smoke-20260917\\comparison\\single-model\\rep-01",
+  "allowed_environment": {
+    "RCA_MODE": "routed",
+    "RCA_MODEL": "zai-org/GLM-5.2"
+  },
+  "credential_values": "never recorded"
+}

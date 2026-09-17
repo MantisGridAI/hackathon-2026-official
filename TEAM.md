@@ -2,9 +2,9 @@
 
 目标是一个无人值守的 RCA Agent：根据真实遥测判断题目要求的时间、组件和原因，按调用选择 GLM，输出可核查证据，并完成同 Agent 的 single-model / routed 对照。交付物是 **Agent + Evaluation + Explanation**。
 
-模块规范最初基于 starter 与 implementation plan 的 `ce54409`。本次用户明确授权的五模块本地实现已落在 `track-1/starter/`，运行、校验与评测代码已接线；实测结果和未完成的环境验收见根 `REPORT.md`。不创建第二套 Agent，不把 notebook 当正式入口。
+模块规范最初基于 starter 与 implementation plan 的 `ce54409`。用户授权的五模块实现已合入 `main`，唯一运行代码位于 `track-1/starter/`，运行、校验与评测代码已接线。各模块代码和测试见 [实现索引](docs/modules/README.md)，实测结果和未完成的环境验收见根 `REPORT.md`。
 
-本地实现由 Codex 主代理协调，subagents 在独立 worktree 中负责 M2、M3、M4，随后接续 M5。各部分先测试再提交。下方 GitHub 认领表仍是人工团队/远程 PR 认领记录，本次没有冒填 GitHub 身份或发布认领 PR；本地集成不等同于已推送远程或最终比赛验收。
+实现由 Codex 主代理协调，subagents 在独立 worktree 中负责 M2、M3、M4，随后接续 M5。各部分先测试再提交，本轮按用户要求直接集成至 `main`，保留分模块提交历史。下表未填写未知的人工 GitHub 身份，也未虚构认领 PR；`integrated` 表示代码已接线，完整比赛环境验收仍以 `REPORT.md` 为准。
 
 ## 1. 认领一块完整交付，不认领一个模糊主题
 
@@ -31,13 +31,13 @@ run.py → M4 调度
 
 仓库不依赖 GitHub Issues。认领者发一个只修改自己这一行的 PR：填 GitHub 用户名，状态改为 `claimed`，填写该认领 PR 的链接。**认领 PR 合并才锁定模块**；同一模块同时有人认领时先协调，不开始重复实现。不要替其他人填名字。
 
-| 模块 | 负责人 GitHub | 状态 | 认领 PR | 实现 / 验收 PR |
+| 模块 | 负责人 GitHub | 状态 | 认领 PR | 实现 / 验收记录 |
 |---|---|---|---|---|
-| M1 | — | available | — | — |
-| M2 | — | available | — | — |
-| M3 | — | available | — | — |
-| M4 | — | available | — | — |
-| M5 | — | available | — | — |
+| M1 | — | integrated | — | [代码与测试](docs/modules/README.md) |
+| M2 | — | integrated | — | [代码与测试](docs/modules/README.md) |
+| M3 | — | integrated | — | [代码与测试](docs/modules/README.md) |
+| M4 | — | integrated | — | [代码与测试](docs/modules/README.md) |
+| M5 | — | integrated | — | [代码与测试](docs/modules/README.md) |
 
 状态含义：`available` 可认领 → `claimed` 已锁定 → `in-progress` 开发中 → `integrated` 已合入且真实接线通过 → `verified` 本模块最终验收通过。写完代码或生成模板不等于后两个状态。模块负责人通过同一行的 PR 更新状态和检查链接。
 
@@ -80,4 +80,4 @@ G0–G4 的具体命令、失败用例和证据要求见 [INTEGRATION.md](docs/I
 - 每个正式 row 都给最佳猜测，把不确定性写在 evidence；不能漏题或伪造观测。
 - 新 Agent 的目标是平均约一分钟/题；必须实测，不把本机单案例耗时当 2 CPU / 8 GB 的结果。
 - 原计划的技术方向保留，五人职责与接口以本页、模块规范及 v1 契约为准。[M4 对照表](docs/modules/04_controller_routing.md)解释细化之处。
-- 本配置没有实现新 Agent、运行付费评测或导入本机数据/notebook。后续实验结果须附代码版本、配置与复现入口。
+- 本轮实现、真实遥测检查及限定付费对照均在 `REPORT.md` 中记录代码版本、配置和实际结果。后续实验同样需要独立输出目录及完整记录。

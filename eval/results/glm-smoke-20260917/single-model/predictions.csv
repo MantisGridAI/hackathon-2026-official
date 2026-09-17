@@ -1,0 +1,22 @@
+row_id,prediction,task_index,wall_s,prompt_tokens,completion_tokens,calls
+6,"```json
+{
+    ""1"": {
+        ""root cause component"": ""emailservice-0"",
+        ""root cause reason"": ""container memory load""
+    },
+    ""2"": {
+        ""root cause component"": ""node-2"",
+        ""root cause reason"": ""node CPU load""
+    }
+}
+```",task_6,103.73,143445,1200,1
+25,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 23:08:30"",
+        ""root cause component"": ""checkoutservice-2"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_7,97.37,146201,682,1
