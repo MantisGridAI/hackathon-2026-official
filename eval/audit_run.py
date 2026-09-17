@@ -328,8 +328,9 @@ def compare_runs(reports):
             "pricing_complete": all(report["pricing_complete"] for report in repetitions),
             "request_attempts": sum(report["request_attempts"] for report in repetitions),
             "external_wall_s": _stats([report["external_wall_s"] for report in repetitions])}
-    pure_routing_pair = any(report["manifest"].get("config", {}).get("pinned_model") for report in reports) and any(
-        report["manifest"].get("config", {}).get("mode") == "routed" and not report["manifest"].get("config", {}).get("pinned_model") for report in reports)
+    pure_routing_pair = any(report["manifest"].get("config", {}).get("pinned_model") and
+        report["manifest"].get("config", {}).get("mode") == "routed" and report["request_attempts"] > 0 for report in reports) and any(
+        report["manifest"].get("config", {}).get("mode") == "routed" and not report["manifest"].get("config", {}).get("pinned_model") and report["request_attempts"] > 0 for report in reports)
     models_exercised = all(report["request_attempts"] > 0 for report in reports if report["manifest"].get("config", {}).get("mode") == "routed")
     integrity = all(report["integrity_status"] == "valid" for report in reports)
     eligible = not mismatches and integrity and pure_routing_pair and models_exercised and all(report["pricing_complete"] for report in reports)

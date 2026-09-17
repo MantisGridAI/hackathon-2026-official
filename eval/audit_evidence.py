@@ -46,6 +46,8 @@ def decode_record(value):
 
 
 def _same(left, right, *, relative_tolerance=1e-10):
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
     if isinstance(left, (int, float)) and not isinstance(left, bool) and isinstance(right, (int, float)) and not isinstance(right, bool):
         import math
         return math.isfinite(left) and math.isfinite(right) and math.isclose(left, right, rel_tol=relative_tolerance, abs_tol=1e-12)

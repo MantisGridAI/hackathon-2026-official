@@ -17,7 +17,6 @@ if __package__:
     from .audit_run import ROOT, STARTER, PRICES, _csv, audit_run, compare_runs
 else:
     from audit_run import ROOT, STARTER, PRICES, _csv, audit_run, compare_runs
-from agents.rca.contracts import RunConfig
 from agents.rca.runtime import parse_case
 
 
@@ -37,6 +36,24 @@ def _code_identity():
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip() or "unavailable"
     files = [*STARTER.glob("*.py"), *STARTER.glob("agents/**/*.py"), STARTER / "requirements.txt"]
     return revision, {path.relative_to(ROOT).as_posix(): _hash_file(path) for path in sorted(files) if path.is_file()}
+
+
+def _resolved_config(mode, pinned):
+    """Freeze M4's actual resolved policy, restoring the caller's environment."""
+    from agents.rca.routing import load_config
+    previous = {key: os.environ.get(key) for key in ("RCA_MODE", "RCA_MODEL")}
+    try:
+        os.environ["RCA_MODE"] = mode
+        os.environ.pop("RCA_MODEL", None)
+        if pinned:
+            os.environ["RCA_MODEL"] = pinned
+        return asdict(load_config())
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def build_plan(dataset, queries, out, *, row_ids=None, limit=0, repetitions=1,
@@ -82,7 +99,7 @@ def build_plan(dataset, queries, out, *, row_ids=None, limit=0, repetitions=1,
         config_pairs.insert(0, ("deterministic", "deterministic", None))
     configs = []
     for config_id, mode, pinned in config_pairs:
-        config = asdict(RunConfig(mode=mode, pinned_model=pinned))
+        config = _resolved_config(mode, pinned)
         budget = {key: value for key, value in config.items() if key not in {"mode", "pinned_model"}}
         for repetition in range(1, repetitions + 1):
             run_dir = out / config_id / f"rep-{repetition:02}"

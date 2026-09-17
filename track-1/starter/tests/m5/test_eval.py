@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 from eval.audit_run import audit_run, compare_runs
 from eval.run_comparison import build_plan, execute_plan
-from eval.audit_evidence import audit_evidence_ledger, decode_record
+from eval.audit_evidence import audit_evidence_ledger, decode_record, _same
 from agents.rca.contracts import CaseContext, UTC8
 from agents.rca.data_access import CSVTelemetryStore
 from agents.rca.metrics import triage_metrics
@@ -150,6 +150,16 @@ class AuditTests(unittest.TestCase):
         self.assertFalse(comparison["routing_comparison_measured"])
         self.assertIsNone(comparison["configurations"]["routed"]["partial_variance"])
 
+    def test_deterministic_pinned_config_is_not_a_measured_single_model(self):
+        first = self.audit()
+        first.update(integrity_status="valid", pricing_complete=True, request_attempts=0)
+        first["manifest"]["config"]["mode"] = "deterministic"
+        second = deepcopy(first)
+        second["manifest"]["config"] = {"mode": "routed", "pinned_model": None}
+        second["manifest"]["config_id"] = "routed"
+        second["request_attempts"] = 1
+        self.assertFalse(compare_runs([first, second])["routing_comparison_measured"])
+
     def test_build_plan_strips_labels_preserves_ids_and_has_no_writes(self):
         target = self.root / "experiment"
         plan = build_plan(self.root, self.labels, target, row_ids=[99, 8], repetitions=2)
@@ -177,6 +187,11 @@ class AuditTests(unittest.TestCase):
 
 
 class EvidenceReplayTests(unittest.TestCase):
+    def test_boolean_is_not_a_measured_count(self):
+        self.assertFalse(_same({"count": 1}, {"count": True}))
+        self.assertFalse(_same({"count": 0}, {"count": False}))
+        self.assertTrue(_same({"count": 1}, {"count": 1.0}))
+
     def test_actual_store_replay_and_locator_audit(self):
         with tempfile.TemporaryDirectory(prefix="synthetic-m5-replay-") as directory:
             root = Path(directory)

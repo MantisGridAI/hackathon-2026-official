@@ -1,0 +1,6 @@
+{
+  "external_wall_s": 59.765,
+  "returncode": 0,
+  "peak_memory_bytes": 261902336,
+  "resource_limit_status": "Actual native process tree pinned to two logical CPUs after spawn, polled every200ms with8GB guard; not Docker/cgroup validation"
+}

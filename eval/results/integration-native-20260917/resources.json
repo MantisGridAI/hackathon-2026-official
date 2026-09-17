@@ -1,0 +1,12 @@
+{
+  "external_wall_s": 245.609,
+  "peak_rss_bytes": null,
+  "exit_code": 0,
+  "resource_guard_terminated": false,
+  "cpu_affinity": [
+    0,
+    1
+  ],
+  "cpu_affinity_verified": false,
+  "resource_measurement_limitation": "Windows venv launcher was monitored; actual interpreter child RSS/affinity not measured. Only external time and process exit are valid."
+}

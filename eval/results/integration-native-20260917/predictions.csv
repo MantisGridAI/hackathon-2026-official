@@ -1,0 +1,71 @@
+row_id,prediction,task_index,wall_s,prompt_tokens,completion_tokens,calls
+0,"```json
+{
+    ""1"": {
+        ""root cause component"": ""emailservice-1"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,29.29,0,0,0
+1,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 09:44:30""
+    }
+}
+```",task_1,30.01,0,0,0
+4,"```json
+{
+    ""1"": {
+        ""root cause component"": ""node-3""
+    }
+}
+```",task_3,30.6,0,0,0
+5,"```json
+{
+    ""1"": {
+        ""root cause reason"": ""container memory load""
+    }
+}
+```",task_2,31.77,0,0,0
+6,"```json
+{
+    ""1"": {
+        ""root cause component"": ""emailservice-0"",
+        ""root cause reason"": ""container memory load""
+    },
+    ""2"": {
+        ""root cause component"": ""node-2"",
+        ""root cause reason"": ""node CPU load""
+    }
+}
+```",task_6,31.74,0,0,0
+8,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:18:30"",
+        ""root cause component"": ""node-1""
+    }
+}
+```",task_5,31.35,0,0,0
+9,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:35:30"",
+        ""root cause reason"": ""node CPU load""
+    },
+    ""2"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:39:30"",
+        ""root cause reason"": ""node CPU load""
+    }
+}
+```",task_4,31.41,0,0,0
+25,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 23:08:30"",
+        ""root cause component"": ""checkoutservice-2"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_7,28.85,0,0,0
