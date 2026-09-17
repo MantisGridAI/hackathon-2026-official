@@ -24,6 +24,7 @@ import json
 import os
 import time
 import traceback
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,6 +81,25 @@ def format_prediction(answers: list[dict]) -> str:
     return "```json\n" + json.dumps(out, indent=4) + "\n```"
 
 
+def _previous_invocation_index(out: Path) -> int:
+    """Preserve prior diagnostic identities when resuming a partially saved run."""
+    maximum = 0
+    for path in (out / "diagnostics" / "evidence").glob("*.json"):
+        if path.stem.isdigit():
+            maximum = max(maximum, int(path.stem))
+    routes = out / "diagnostics" / "routes.jsonl"
+    if routes.exists():
+        with routes.open(encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    value = json.loads(line).get("invocation_index")
+                    if isinstance(value, int) and value >= 0:
+                        maximum = max(maximum, value)
+                except (ValueError, AttributeError):
+                    pass  # Offline audit reports malformed records; do not erase them.
+    return maximum
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", required=True, help="bundle dir, containing telemetry/")
@@ -109,9 +129,17 @@ def main() -> None:
         done = set(prev.row_id.astype(int))
         print(f"resuming: {len(done)} case(s) already done")
 
+    invocation_offset = _previous_invocation_index(out) if args.resume else 0
+    pending_ids = [int(r.row_id) for r in queries.itertuples(index=False) if int(r.row_id) not in done]
+    attempts = out / "diagnostics" / "attempts"
+    attempts.mkdir(parents=True, exist_ok=True)
+    attempt = {"resumed": args.resume, "agent": args.agent, "invocation_offset": invocation_offset,
+               "planned_row_ids_in_order": pending_ids,
+               "invocation_rows": {str(invocation_offset + index): rid for index, rid in enumerate(pending_ids, 1)}}
+    (attempts / (uuid.uuid4().hex + ".json")).write_text(json.dumps(attempt, indent=2), encoding="utf-8")
     agent = importlib.import_module(args.agent)
     ctx = {"dataset_dir": dataset, "out_dir": out,
-           "started_monotonic": RUN_STARTED_MONOTONIC}
+           "started_monotonic": RUN_STARTED_MONOTONIC, "invocation_offset": invocation_offset}
 
     for r in queries.itertuples(index=False):
         rid = int(r.row_id)

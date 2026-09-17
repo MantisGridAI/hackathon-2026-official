@@ -86,8 +86,11 @@ def get_run_state(dataset_dir: Path, ctx: dict, config: RunConfig) -> RunState:
     if existing is None:
         started = float(ctx.get("started_monotonic", time.monotonic()))
         out.mkdir(parents=True, exist_ok=True)
+        offset = ctx.get("invocation_offset", 0)
+        if not isinstance(offset, int) or offset < 0:
+            raise ValueError("Invocation offset must be a nonnegative integer")
         existing = RunState(CSVTelemetryStore(dataset, out_dir=out), config, out, started,
-                            started + config.run_soft_seconds)
+                            started + config.run_soft_seconds, invocation_index=offset)
         ctx["rca_state"] = existing
     existing.invocation_index += 1
     return existing

@@ -14,6 +14,29 @@ STARTER = Path(__file__).resolve().parents[2]
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_resume_preserves_prior_evidence_ledger_and_attempt_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dataset, out = make_dataset(root / "dataset"), root / "out"
+            env = dict(os.environ, RCA_MODE="deterministic", PYTHONDONTWRITEBYTECODE="1")
+            env.pop("FEATHERLESS_API_KEY", None)
+            command = [sys.executable, str(STARTER / "run.py"), "--dataset", str(dataset),
+                       "--queries", str(dataset / "query.csv"), "--out", str(out)]
+            first = subprocess.run(command + ["--limit", "1"], env=env, cwd=STARTER,
+                                   capture_output=True, text=True, timeout=30)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            saved = (out / "diagnostics/evidence/1.json").read_bytes()
+            resumed = subprocess.run(command + ["--resume"], env=env, cwd=STARTER,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            self.assertEqual(saved, (out / "diagnostics/evidence/1.json").read_bytes())
+            second = json.loads((out / "diagnostics/evidence/2.json").read_text())
+            self.assertEqual(second["case"]["failure_count"], 2)
+            routes = [json.loads(line) for line in (out / "diagnostics/routes.jsonl").read_text().splitlines()]
+            self.assertEqual({row["invocation_index"] for row in routes}, {1, 2})
+            attempts = [json.loads(p.read_text()) for p in (out / "diagnostics/attempts").glob("*.json")]
+            self.assertTrue(any(a["invocation_rows"] == {"2": 23} for a in attempts))
+
     def test_default_entrypoint_noncontinuous_ids_no_key_or_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
