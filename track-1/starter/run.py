@@ -85,7 +85,7 @@ def main() -> None:
     p.add_argument("--dataset", required=True, help="bundle dir, containing telemetry/")
     p.add_argument("--queries", required=True, help="query.csv")
     p.add_argument("--out", required=True)
-    p.add_argument("--agent", default="agents.heuristic",
+    p.add_argument("--agent", default="agents.routed",
                    help="module exposing solve(instruction, dataset_dir, ctx)")
     p.add_argument("--limit", type=int, default=0, help="first N cases only")
     p.add_argument("--resume", action="store_true",

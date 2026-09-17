@@ -5,7 +5,33 @@
 Start at [TEAM.md](TEAM.md) to claim one of the five modules, find its implementation
 specification and AI handoff prompt, and follow the shared interfaces and integration
 checks. The implementation source remains `track-1/starter/`. The module documents
-specify the team Agent to build; they do not claim it has already been implemented.
+specify the implemented five-module Agent. See [REPORT.md](REPORT.md) for measured
+checks and remaining real-model/container acceptance requirements.
+
+The default entry point now uses `agents.routed`. To run without model calls:
+
+```bash
+pip install -r track-1/starter/requirements.txt
+RCA_MODE=deterministic python track-1/starter/run.py \
+  --dataset track-1/data/Market-cloudbed-1 \
+  --queries track-1/data/Market-cloudbed-1/query.csv --out out/my-run
+```
+
+In PowerShell, set `$env:RCA_MODE='deterministic'` before the Python command.
+For model routing, set `RCA_MODE=routed`, `FEATHERLESS_API_KEY` and optionally
+`FEATHERLESS_BASE_URL`. Pin `RCA_MODEL=zai-org/GLM-5.2` for the single-model control.
+Use a new output directory per experiment. The sole Dockerfile is at repository root.
+
+Offline tests (synthetic fixtures and local HTTP only):
+
+```bash
+cd track-1/starter
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+Set `RCA_TEST_DATA` to the official bundle path to include real telemetry smoke tests.
+Runtime reads only instruction text and whitelisted telemetry; development labels
+are consumed only by the separate offline evaluation tools under `eval/`.
 
 ## Official hackathon brief
 
@@ -40,9 +66,10 @@ Each track's README tells you how to get the data.
 
 ## AI usage disclosure
 
-OpenAI Codex assisted with the five-module development specifications, shared
-interface contract, collaboration instructions and integration checklist in this
-repository. The existing starter contains the upstream heuristic and GLM-routing
-examples; this documentation change does not replace those implementations or
-constitute a new Agent evaluation. Runtime model usage is recorded per run; the
-submission report must describe the implementations and tools actually used.
+OpenAI Codex (GPT-6) and its subagents implemented the five RCA modules, tests,
+packaging and evaluation harness under human direction. The official starter,
+formatter, heuristic baseline and accuracy evaluator were reused; the official
+accuracy evaluator is unchanged. No external agent framework was added. Runtime
+uses only the documented Featherless GLM family; per-attempt routing and observed
+usage are recorded under each run's output directory. See REPORT.md for actual
+experiments and limits; coding-assistant usage is distinct from runtime model calls.

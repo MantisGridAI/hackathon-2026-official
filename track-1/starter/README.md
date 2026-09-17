@@ -9,24 +9,28 @@ run.py          the submission requirements. Replace the agent, not this file
 score.py        score yourself against the dev split
 llm.py          a Featherless client that counts tokens per model
 cost.py         turns those token counts into dollars
-Dockerfile      how we build your submission
+../../Dockerfile  the sole image definition, built from repository root
 agents/
   heuristic.py  a baseline with no model in it. Beat this on day one
-  routed.py     an example that routes calls across the GLM family
+  routed.py     the default five-module RCA Agent
+  rca/          data access, metrics, traces/logs, controller, evidence
 ```
 
 ## Five minutes to a scored run
 
 ```bash
-python run.py --dataset ../data/Market-cloudbed-1 \
-              --queries ../data/Market-cloudbed-1/dev/query_dev.csv \
+RCA_MODE=deterministic python run.py --dataset ../data/Market-cloudbed-1 \
+              --queries ../data/Market-cloudbed-1/query.csv \
               --out ../out/dev
 
 python score.py --predictions ../out/dev/predictions.csv \
                 --queries ../data/Market-cloudbed-1/dev/query_dev.csv
 ```
 
-That costs nothing and takes under a minute. It is the floor.
+Deterministic mode makes no model requests. Use a new output directory per run.
+The retained baseline is available with `--agent agents.heuristic`; the historical
+baseline results below are not results for the new default Agent. See the root
+`REPORT.md` for measurements and `eval/run_comparison.py --help` for comparisons.
 
 ## What you submit
 
