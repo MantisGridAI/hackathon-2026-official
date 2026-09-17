@@ -91,7 +91,9 @@ def prepare_candidates(case, candidates, catalog, evidence):
             setattr(existing, attr, sorted(set(getattr(existing, attr) + getattr(candidate, attr))))
         existing.features["m4.provenance"] = sorted(set(existing.features["m4.provenance"] + candidate.features["m4.provenance"]))
         existing.candidate_id = stable_id(case.case_key, "m4.candidate", {
-            "parents": existing.features["m4.provenance"], "transform": "candidate_fusion.v1"})
+            "parents": existing.features["m4.provenance"], "component": existing.component,
+            "reason": existing.reason, "episode_id": existing.episode_id,
+            "onset_interval": existing.onset_interval, "transform": "candidate_fusion.v1"})
     return groups
 
 

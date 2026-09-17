@@ -16,7 +16,7 @@ Actual checks on Windows, Python 3.12.14 bundled runtime:
 
 ```
 python -m unittest discover -s tests/m4 -p 'test_*.py' -v
-# 35 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
+# 36 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
 
 RCA_TEST_DATA=<official Market-cloudbed-1 directory>
 python -m unittest discover -s tests/m4 -p test_real_window.py -v
@@ -31,7 +31,8 @@ Coverage includes provider HTTP-200 error bodies, empty choices/content, invalid
 JSON/IDs/queries, missing usage, bounded attempts, run/case cost reservation,
 deadline exhaustion, pinned-model fallback prohibition, shared circuit breakers,
 per-case usage deltas, deterministic operation without a client, reference
-collisions, correlated metric fusion, multiple episodes, independent trace
+collisions, distinct IDs for fused reason hypotheses, correlated metric fusion,
+multiple episodes, independent trace
 triage, renderer invalid/failure, and parse-failure best guesses.
 
 Unknown provider token counts remain null in `diagnostics/routes.jsonl`; their

@@ -45,6 +45,19 @@ class RankingTests(unittest.TestCase):
         ranked = rank_candidates(case(2), inputs, [evidence()])
         self.assertEqual(len(choose_candidates(ranked, 2)), 1)
 
+    def test_fused_weak_reason_hypotheses_have_distinct_ids(self):
+        first = candidate(key="trace-op-a", reason=None)
+        first.features = {"traces.network_family": True}
+        second = replace(first, candidate_id="trace-op-b")
+        prepared = prepare_candidates(case(), [first, second], Store().catalog, [evidence()])
+        self.assertEqual(len(prepared), 4)
+        self.assertEqual(len({c.candidate_id for c in prepared}), 4)
+        for hypothesis in prepared:
+            payload = dict(selected_candidate_ids=[hypothesis.candidate_id], confidence="low",
+                           supporting_evidence_ids=["e1"], unresolved=[], next_query=None)
+            reply = validate_selection(json.dumps(payload), case(), prepared, [evidence()])
+            self.assertEqual(reply["selected_candidate_ids"], [hypothesis.candidate_id])
+
     def test_disjoint_episodes_can_be_two_faults_same_component(self):
         other = candidate("c2")
         other.onset_interval = (case().start + timedelta(minutes=5), case().start + timedelta(minutes=6))
