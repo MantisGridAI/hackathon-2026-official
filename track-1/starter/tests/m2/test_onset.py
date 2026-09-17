@@ -50,6 +50,17 @@ class OnsetTests(unittest.TestCase):
         result = summarize_series([(0, 0), (60, 0), (120, 10), (180, 10), (240, 20)], 240, 300)
         self.assertTrue(result["reference_sensitive"])
 
+    def test_reference_envelope_and_legacy_replay_schema(self):
+        from agents.rca.onset import DEFAULTS
+        samples = [(i * 60, v) for i, v in enumerate([0., 2., 0., 0., 2., 0., 5., 5.])]
+        current = summarize_series(samples, 360, 480)
+        self.assertEqual(current["baseline_p10"], 0.)
+        self.assertEqual(current["baseline_p90"], 2.)
+        saved_v1 = {k: v for k, v in DEFAULTS.items() if k != "summary_version"}
+        replay = summarize_series(samples, 360, 480, params=saved_v1)
+        self.assertNotIn("baseline_p10", replay)
+        self.assertEqual({k: v for k, v in current.items() if k not in {"baseline_p10", "baseline_p90"}}, replay)
+
 
 if __name__ == "__main__":
     unittest.main()

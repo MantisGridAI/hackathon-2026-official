@@ -20,14 +20,16 @@ from .onset import DEFAULTS, summarize_series
 
 FAMILIES = frozenset({"cpu", "memory", "read_io", "write_io", "process", "network_hints"})
 MAX_WINDOW_ROWS = 250_000
-MAX_EVIDENCE_SERIES = 512
 MAX_COMPARISON_COMPONENTS = 24
 # No gauge/counter semantics are guaranteed by the official telemetry schema.
 # Verified exact KPI names may be added here with a transform-version change.
 METRIC_SEMANTICS: dict[str, str] = {}
-BASE_TRANSFORM = "metrics.baseline_compare.v1"
-SERVICE_TRANSFORM = "metrics.service_summary.v1"
-COMPARE_TRANSFORM = "metrics.replica_node_compare.v1"
+BASE_TRANSFORM = "metrics.baseline_compare.v2"
+SERVICE_TRANSFORM = "metrics.service_summary.v2"
+COMPARE_TRANSFORM = "metrics.replica_node_compare.v2"
+BASE_TRANSFORMS = {BASE_TRANSFORM, "metrics.baseline_compare.v1"}
+SERVICE_TRANSFORMS = {SERVICE_TRANSFORM, "metrics.service_summary.v1"}
+COMPARE_TRANSFORMS = {COMPARE_TRANSFORM, "metrics.replica_node_compare.v1"}
 
 
 def _time(value):
@@ -55,10 +57,16 @@ def _hypothesis(kind, kpi, family, episode):
     """Directional resource hints; ambiguous network subtype remains unresolved."""
     key = kpi.lower()
     increasing = episode["direction"] == "increase"
-    if family == "cpu" and (increasing != ("idle" in key)):
+    # Scheduling-period / throttling counters are symptoms, not CPU utilization.
+    # Likewise page faults and cache/mapping growth may be caused by I/O; merely
+    # containing "cpu" or "memory" does not identify a resource-load mechanism.
+    cpu_auxiliary = any(x in key for x in ("cfs_", "throttl", "period", "limit", "quota", "iowait", "steal"))
+    if family == "cpu" and not cpu_auxiliary and (increasing != ("idle" in key)):
         return "node CPU spike" if kind == "node" and episode["spike"] else f"{kind} CPU load"
-    if family == "memory" and increasing and not any(x in key for x in ("free", "available", "limit")):
-        return "node memory consumption" if kind == "node" else "container memory load"
+    memory_auxiliary = any(x in key for x in ("fault", "fail", "cache", "mapped", "limit", "swap"))
+    if family == "memory" and not memory_auxiliary:
+        if increasing != any(x in key for x in ("free", "available")):
+            return "node memory consumption" if kind == "node" else "container memory load"
     if family in {"read_io", "write_io"} and increasing:
         direction = "read" if family == "read_io" else "write"
         return f"node disk {direction} I/O consumption" if kind == "node" else f"container {direction} I/O load"
@@ -211,16 +219,9 @@ def _resource_records(case, frame, query, coverage, families, deadline):
         record = _record(case, BASE_TRANSFORM, params, values, [query], [coverage], group,
                          [str(component)], _limitations(values, coverage))
         output.append((record, family))
-    # Retain every resource family and component before extra redundant KPIs.
+    # All scanned series have already been analysed; retaining the results avoids
+    # silently removing component/family hypotheses before M4's explicit shortlist.
     output.sort(key=lambda item: (-(item[0].values["strength"] or 0), item[0].evidence_id))
-    if len(output) > MAX_EVIDENCE_SERIES:
-        primary, extra, seen = [], [], set()
-        for item in output:
-            key = item[0].component_ids[0], item[1]
-            (extra if key in seen else primary).append(item)
-            seen.add(key)
-        output = (primary + extra)[:MAX_EVIDENCE_SERIES]
-        warnings.append(f"Evidence series cap {MAX_EVIDENCE_SERIES} reached; candidate recall is incomplete")
     return output, warnings
 
 
@@ -234,8 +235,22 @@ def _candidates(case, record, family, kind):
         estimate = _time(episode["onset_estimate_s"])
         baseline = values["baseline_median"]
         ratio = episode["peak_value"] / baseline if baseline not in (None, 0) else None
+        # Robust z-scores have a different ceiling when MAD is zero. They are
+        # useful detectors, but must not be compared directly across KPIs. Use
+        # the same symmetric, noise-floored relative effect for every sequence;
+        # it is invariant to the KPI's native scale and bounded in [0, 10].
+        peak = episode["peak_value"]
+        noise = 1.4826 * (values["baseline_mad"] or 0.0) * DEFAULTS["robust_threshold"]
+        reference_edge = values.get("baseline_p90" if episode["direction"] == "increase" else "baseline_p10")
+        ordinary_change = max(noise, abs(reference_edge - baseline)) if reference_edge is not None and baseline is not None else noise
+        scale = max(abs(baseline or 0.0), abs(peak), ordinary_change)
+        novel_change = max(0.0, abs(peak - baseline) - ordinary_change) if baseline is not None else 0.0
+        calibrated = min(10.0, 10.0 * novel_change / scale) if scale else 0.0
         features = {
             "metrics.strength": episode["strength"], "metrics.family": family,
+            "metrics.calibrated_strength": calibrated,
+            "metrics.strength_method": "reference_envelope_relative.v2",
+            "metrics.reference_variation": ordinary_change,
             "metrics.direction": episode["direction"], "metrics.persistence_samples": episode["persistence_samples"],
             "metrics.persistence_s": episode["persistence_s"], "metrics.sampling_interval_s": values["sampling_interval_s"],
             "metrics.baseline_n": values["baseline_n"], "metrics.window_n": values["window_n"],
@@ -250,6 +265,7 @@ def _candidates(case, record, family, kind):
         if episode["gap_before"]:
             unresolved.append("A gap before the episode prevents precise onset placement.")
         reason = _hypothesis(kind, params["kpi_name"], family, episode)
+        features["metrics.mechanism_supported"] = reason is not None
         if reason is None:
             unresolved.append("This metric does not identify a legal fault mechanism or network subtype.")
         candidates.append(Candidate(
@@ -284,11 +300,16 @@ def _analyse(case, store, sources, components, families, deadline):
     service_hints = {}
     for index, source in enumerate(sources):
         query = _query(case, source, components)
-        # Reserve time for every required source and for its in-memory analysis.
+        # Work-conserving budget: a cold first read can borrow unused time, while
+        # later sources and in-memory analysis retain a small bounded reserve.
+        # Equal slices formerly cut the tiny service source before its first
+        # chunk during cold filesystem stalls despite ample module time left.
         remaining_sources = len(sources) - index
         remaining = max(0.0, deadline - time.monotonic())
-        source_deadline = time.monotonic() + remaining / remaining_sources
-        read_deadline = time.monotonic() + remaining / remaining_sources * 0.85
+        reserve = sum(2. if next_source == 'metric_container' else .5 for next_source in sources[index + 1:])
+        source_deadline = deadline - min(remaining * .25, reserve)
+        source_remaining = max(0., source_deadline - time.monotonic())
+        read_deadline = source_deadline - min(1., source_remaining * .15)
         frame, coverage, warnings = _read(store, query, read_deadline)
         bundle.coverage.append(coverage)
         bundle.warnings.extend(warnings)
@@ -428,7 +449,7 @@ def compare_replicas_and_node(case, component, store, *, deadline):
 
 def replay_evidence(record, store, *, deadline):
     """Recompute the recorded values from saved queries and transformation settings."""
-    if record.transform not in {BASE_TRANSFORM, SERVICE_TRANSFORM, COMPARE_TRANSFORM}:
+    if record.transform not in BASE_TRANSFORMS | SERVICE_TRANSFORMS | COMPARE_TRANSFORMS:
         raise ValueError(f"Unsupported metric transform: {record.transform}")
     frames = []
     retained = record.transform_params.get("retained_rows_per_query")
@@ -439,7 +460,7 @@ def replay_evidence(record, store, *, deadline):
         frames.append(frame)
         if len(frame) != count:
             raise ValueError(f"Metric replay retained {len(frame)} rows but requires the original {count}-row prefix ({coverage.status})")
-    if record.transform == COMPARE_TRANSFORM:
+    if record.transform in COMPARE_TRANSFORMS:
         reconstructed = []
         for specification in record.transform_params["series"]:
             params = specification["params"]
@@ -449,7 +470,7 @@ def replay_evidence(record, store, *, deadline):
         return _comparison_values(reconstructed, record.transform_params["target"], record.transform_params["relationships"])
     frame = frames[0]
     params = record.transform_params
-    if record.transform == SERVICE_TRANSFORM:
+    if record.transform in SERVICE_TRANSFORMS:
         frame = frame[frame["service"].astype(str) == params["service"]].rename(columns={params["field"]: "value"})
     else:
         frame = _select(frame, params)

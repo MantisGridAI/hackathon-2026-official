@@ -1,9 +1,10 @@
 """Synthetic records only: these fixtures are never runtime evidence."""
 import unittest
+import time
 
 import pandas as pd
 
-from agents.rca.network import edge_values, pair_spans
+from agents.rca.network import edge_values, pair_spans, pair_spans_compact
 
 
 def span(trace, span_id, parent, component, timestamp, kind="rpc"):
@@ -13,6 +14,38 @@ def span(trace, span_id, parent, component, timestamp, kind="rpc"):
 
 
 class PairingTests(unittest.TestCase):
+    def test_vectorized_pairing_exactly_matches_legacy_pathologies(self):
+        frame = pd.DataFrame([
+            span("t1", "p", "", "caller-a", 10),
+            span("t2", "p", "", "caller-b", 20),
+            span("t2", "c", "p", "callee", 19, "db"),
+            span("t3", "c", "p", "orphan", 22),
+            span("dup", "p", "", "first", 10),
+            span("dup", "p", "", "second", 10),
+            span("dup", "c", "p", "callee", 11),
+            span("dc", "p", "", "parent", 10),
+            span("dc", "c", "p", "child", 11),
+            span("dc", "c", "p", "child", 11),
+            span("self", "s", "s", "loop", 10),
+            span("", "missing-trace", "p", "invalid", 10),
+            span("no-component", "p", "", "", 10),
+            span("no-component", "c", "p", "child", 11),
+            span("null-component", "p", "", None, 10),
+            span("null-component", "c", "p", "child", 11),
+            span("async", "p", "", "caller", 100, "http"),
+            span("async", "c", "p", "callee", 105, "telemetry"),
+        ])
+        legacy, expected = pair_spans(frame)
+        frame["_component_id"] = frame["_component_id"].astype("category")
+        frame["type"] = frame["type"].astype("category")
+        compact, observed = pair_spans_compact(frame, deadline=time.monotonic() + 5)
+        self.assertEqual(expected, observed)
+        self.assertEqual(set(legacy), set(compact))
+        for key in legacy:
+            self.assertEqual(edge_values(legacy[key], 0, 20, 120), edge_values(compact[key], 0, 20, 120))
+        with self.assertRaises(TimeoutError):
+            pair_spans_compact(frame, deadline=time.monotonic() - 1)
+
     def test_same_span_id_across_traces_does_not_cross_join(self):
         frame = pd.DataFrame([
             span("t1", "p", "", "caller-a", 10),

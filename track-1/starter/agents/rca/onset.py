@@ -8,6 +8,7 @@ import numpy as np
 
 
 DEFAULTS = {
+    "summary_version": 2,
     "robust_threshold": 4.0,
     "relative_change_floor": 0.2,
     "gap_cadences": 2.5,
@@ -68,6 +69,9 @@ def summarize_series(samples, start: float, end: float, *, semantics="unknown", 
     config = dict(DEFAULTS)
     if params:
         config.update(params)
+        # Saved v1 records remain exactly replayable with their saved settings.
+        if "summary_version" not in params:
+            config["summary_version"] = 1
     arr, quality = prepare_samples(samples, semantics=semantics)
     times, values = arr[:, 0], arr[:, 1]
     base = values[times < start]
@@ -95,6 +99,9 @@ def summarize_series(samples, start: float, end: float, *, semantics="unknown", 
         "peak_timestamp_s": None, "peak_value": None, "strength": None,
         "anomalous_samples": None, "episodes": [], **quality,
     }
+    if config["summary_version"] >= 2:
+        result["baseline_p10"] = float(np.quantile(base, .1)) if len(base) else None
+        result["baseline_p90"] = float(np.quantile(base, .9)) if len(base) else None
     if not len(base) or not len(incident):
         return result
     distance = np.abs(incident - median)

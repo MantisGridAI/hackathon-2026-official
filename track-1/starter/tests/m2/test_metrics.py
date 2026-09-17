@@ -137,6 +137,16 @@ class MetricTests(unittest.TestCase):
         self.assertEqual([c.candidate_id for c in first.candidates], [c.candidate_id for c in second.candidates])
         self.assertEqual([r.evidence_id for r in first.evidence], [r.evidence_id for r in second.evidence])
 
+    def test_cold_source_can_borrow_unused_module_budget(self):
+        from agents.rca import metrics
+        with patch('agents.rca.metrics.time.monotonic', return_value=100.), \
+             patch('agents.rca.metrics._read', wraps=metrics._read) as read:
+            result = triage_metrics(self.case, self.store, deadline=115.)
+        self.assertEqual(len(read.call_args_list), 3)
+        self.assertGreater(read.call_args_list[0].args[2], 110.)
+        self.assertTrue(all(call.args[2] < 115. for call in read.call_args_list))
+        self.assertTrue(all(c.status == 'complete' for c in result.coverage))
+
     def test_row_cap_closes_iterator_and_marks_partial(self):
         with patch("agents.rca.metrics.MAX_WINDOW_ROWS", 20):
             bundle = self.analyse()
@@ -166,6 +176,49 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(len(spikes), 1)
         self.assertEqual(spikes[0].reason, "node CPU spike")
         self.assertTrue(spikes[0].features["metrics.spike"])
+
+    def test_calibrated_effect_has_same_scale_for_zero_and_nonzero_mad(self):
+        from agents.rca.metrics import _candidates
+        from agents.rca.onset import summarize_series
+        from agents.rca.contracts import EvidenceRecord
+        from agents.rca.ranking import rank_candidates
+        def observation(name, baseline, changed, multiplier=1.):
+            start = self.case.start.timestamp()
+            samples = [(start - (len(baseline) - i) * 60, v * multiplier) for i, v in enumerate(baseline)]
+            samples += [(start + i * 60, changed * multiplier) for i in range(6)]
+            values = summarize_series(samples, start, self.case.end.timestamp())
+            record = EvidenceRecord(name, "metric", [name], (self.case.reference_start, self.case.end),
+                                    transform_params={"kpi_name": "synthetic_cpu_usage", "raw_cmdb_id": name},
+                                    values=values)
+            return _candidates(self.case, record, "cpu", "container")[0], record
+        activation, first = observation("synthetic-activation", [0.] * 6, 8.)
+        moderate, second = observation("synthetic-moderate", [.0049, .005, .0051, .0049, .005, .0051], .015)
+        rescaled, _ = observation("synthetic-rescaled", [.0049, .005, .0051, .0049, .005, .0051], .015, 1e6)
+        # The detector's zero-MAD ceiling used to invert these two effects.
+        self.assertLess(activation.features["metrics.strength"], moderate.features["metrics.strength"])
+        self.assertGreater(activation.features["metrics.calibrated_strength"], moderate.features["metrics.calibrated_strength"])
+        self.assertAlmostEqual(moderate.features["metrics.calibrated_strength"], rescaled.features["metrics.calibrated_strength"])
+        self.assertEqual(rank_candidates(self.case, [moderate, activation], [first, second])[0].candidate, activation)
+        repeated, _ = observation("synthetic-periodic", [0., .015, 0., 0., .015, 0.], .015)
+        self.assertEqual(repeated.features["metrics.calibrated_strength"], 0.)
+
+    def test_cpu_decrease_retains_unknown_mechanism(self):
+        from agents.rca.metrics import _hypothesis
+        self.assertIsNone(_hypothesis("container", "cpu_usage", "cpu", {"direction": "decrease", "spike": False}))
+        self.assertEqual(_hypothesis("node", "cpu_idle", "cpu", {"direction": "decrease", "spike": False}), "node CPU load")
+
+    def test_auxiliary_counters_do_not_establish_resource_load(self):
+        from agents.rca.metrics import _hypothesis
+        episode = {"direction": "increase", "spike": False}
+        for family, kpi in (("cpu", "container_cpu_cfs_periods"),
+                            ("cpu", "container_cpu_throttled_seconds"),
+                            ("cpu", "system.cpu.iowait"),
+                            ("memory", "container_memory_failures.pgfault"),
+                            ("memory", "container_memory_cache"),
+                            ("memory", "container_memory_mapped_file")):
+            with self.subTest(kpi=kpi):
+                self.assertIsNone(_hypothesis("container", kpi, family, episode))
+        self.assertEqual(_hypothesis("node", "memory_available", "memory", {"direction": "decrease", "spike": False}), "node memory consumption")
 
 
 class RealTelemetrySmoke(unittest.TestCase):

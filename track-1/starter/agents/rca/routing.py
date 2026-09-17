@@ -10,14 +10,43 @@ from pathlib import Path
 from agents.rca.contracts import RunConfig
 from agents.rca.prompts import MAX_PROMPT_BYTES, prompt_bytes
 from cost import PRICES
-from llm import LLM
+from llm import LLM, completion_options
 
-CHEAP = ("zai-org/GLM-4.7-Flash", "zai-org/GLM-5.3-Flash")
-STRONG = ("zai-org/GLM-5.2", "zai-org/GLM-5.1")
-POLICY_VERSION = "routing.v1"
+CHEAP = ("zai-org/GLM-5.3-Flash", "zai-org/GLM-4.7-Flash")
+STRONG = ("zai-org/GLM-5.1", "zai-org/GLM-5.2")
+POLICY_VERSION = "routing.v3"
 OUTPUT_TOKENS = 1200
 RENDER_RESERVE_S = 2.0
+MODEL_RESERVE_S = 20.0
+MIN_REQUEST_SECONDS = 5.0
 BREAKER_FAILURES = 2
+
+
+def output_budget(model):
+    # Forced thinking shares the completion cap; retain a finite larger allowance.
+    return 2400 if model in ("zai-org/GLM-5.3-Flash", "zai-org/GLM-5.2") else OUTPUT_TOKENS
+
+
+def request_window(model):
+    # A short budget should not launch a strong thinking request that cannot finish.
+    return (22., 30.) if model == "zai-org/GLM-5.2" else (MIN_REQUEST_SECONDS, 20.)
+
+
+def failure_category(status):
+    if status == "valid":
+        return None
+    if status in ("wall_deadline_exceeded", "worker_startup_deadline",
+                  "transport_TimeoutError", "transport_APITimeoutError", "transport_timeout"):
+        return "local_budget"
+    if status == "output_truncated":
+        return "output_truncation"
+    if status in ("empty_content", "invalid_response"):
+        return "schema_validation"
+    if status in ("missing_api_key", "invalid_base_url", "invalid_model", "unexpected_model", "pinned_model_mismatch"):
+        return "configuration"
+    # Only provider/transport availability, not a caller's small output/time cap,
+    # contributes to the cross-case circuit breaker.
+    return "availability"
 
 
 def load_config() -> RunConfig:
@@ -28,7 +57,7 @@ def load_config() -> RunConfig:
     if pinned is not None and pinned not in PRICES:
         raise ValueError("RCA_MODEL must be a documented GLM model ID")
     return RunConfig(schema_version="rca-v1", mode=mode, pinned_model=pinned,
-                     reference_minutes=10, case_soft_seconds=45., run_soft_seconds=1080.,
+                     reference_minutes=10, case_soft_seconds=55., run_soft_seconds=1140.,
                      case_cost_limit_usd=2.5, run_cost_limit_usd=20., max_followups=1,
                      max_model_stages=2, max_http_attempts_per_case=4)
 
@@ -85,7 +114,7 @@ class Router:
         # UTF-8 byte count is a conservative token bound plus framing headroom.
         upper_input_tokens = len(json.dumps(messages, ensure_ascii=False).encode("utf-8")) + 1024
         p_in, p_out = PRICES[model]
-        return (upper_input_tokens * p_in + OUTPUT_TOKENS * p_out) / 1e6
+        return (upper_input_tokens * p_in + output_budget(model) * p_out) / 1e6
 
     def request(self, stage: str, messages: list[dict], *, reason: str,
                 validate) -> dict | None:
@@ -100,12 +129,13 @@ class Router:
         models = (cfg.pinned_model,) if cfg.pinned_model else tier
         requested_model = models[0]
         for index, model in enumerate(models):
+            minimum_seconds, maximum_seconds = request_window(model)
             if self.state.model_health.get(model, 0) >= BREAKER_FAILURES:
                 self.bypass("circuit_open:" + model, stage)
                 continue
             remaining = self.deadline - time.monotonic() - RENDER_RESERVE_S
             reserve = self._reserve(messages, model)
-            if remaining <= .05:
+            if remaining < minimum_seconds:
                 self.bypass("deadline_exhausted", stage)
                 return None
             if self.attempts >= cfg.max_http_attempts_per_case:
@@ -123,7 +153,7 @@ class Router:
                     return None
             # Initialization and serialization consume the same absolute budget.
             remaining = self.deadline - time.monotonic() - RENDER_RESERVE_S
-            if remaining <= .05:
+            if remaining < minimum_seconds:
                 self.bypass("deadline_exhausted", stage)
                 return None
             self.attempts += 1
@@ -131,8 +161,8 @@ class Router:
             started = time.monotonic()
             # LLM.request catches transport failures; programming errors remain visible.
             result = self.state.client.request(model, messages,
-                                               timeout=min(20., remaining),
-                                               max_tokens=OUTPUT_TOKENS)
+                                               timeout=min(maximum_seconds, remaining),
+                                               max_tokens=output_budget(model))
             duration = time.monotonic() - started
             actual = result.model
             # Preserve provider identity even on a policy violation. Charging an
@@ -168,7 +198,9 @@ class Router:
                     status = "valid"
                 except (ValueError, TypeError, KeyError, json.JSONDecodeError):
                     status = "invalid_response"
-            if status != "valid" and request_started:
+            category = failure_category(status)
+            breaker_affected = category == "availability" and request_started
+            if breaker_affected:
                 self.state.model_health[model] = self.state.model_health.get(model, 0) + 1
             elif status == "valid":
                 self.state.model_health[model] = 0
@@ -178,6 +210,15 @@ class Router:
                               fallback=index > 0, status=status, latency_s=round(duration, 6),
                               prompt_tokens=result.prompt_tokens,
                               completion_tokens=result.completion_tokens,
+                              failure_category=category, breaker_affected=breaker_affected,
+                              request_options=completion_options(model),
+                              max_output_tokens=output_budget(model), prompt_bytes=prompt_bytes(messages),
+                              timeout_s=min(maximum_seconds, remaining), remaining_s=remaining,
+                              finish_reason=getattr(result, "finish_reason", None),
+                              content_chars=getattr(result, "content_chars", 0),
+                              reasoning_chars=getattr(result, "reasoning_chars", 0),
+                              reasoning_tokens=getattr(result, "reasoning_tokens", None),
+                              response_valid=status == "valid",
                               estimated_cost_usd=cost,
                               retained_reservation_usd=reserve if unknown_cost else 0.))
             if payload is not None and status == "valid":

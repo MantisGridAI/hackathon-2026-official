@@ -178,8 +178,8 @@ class RunConfig:
     mode: str = "routed"
     pinned_model: str | None = None
     reference_minutes: int = 10
-    case_soft_seconds: float = 45.0
-    run_soft_seconds: float = 1080.0
+    case_soft_seconds: float = 55.0
+    run_soft_seconds: float = 1140.0
     case_cost_limit_usd: float = 2.5
     run_cost_limit_usd: float = 20.0
     max_followups: int = 1

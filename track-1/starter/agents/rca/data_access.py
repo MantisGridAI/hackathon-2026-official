@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 import re
@@ -28,9 +28,20 @@ SOURCES = {
 LOCATORS = ("_source_file", "_record_index", "_timestamp_s", "_component_id")
 
 
+@dataclass
+class _CachedWindow:
+    query: QuerySpec
+    identity: tuple
+    mapping_version: tuple
+    columns: frozenset[str]
+    frames: list[pd.DataFrame]
+    coverage: Coverage
+    size: int
+
+
 class CSVTelemetryStore:
     def __init__(self, dataset_dir: Path, *, out_dir: Path | None = None,
-                 chunk_size: int = 50000, cache_bytes: int = 32 * 1024 * 1024):
+                 chunk_size: int = 50000, cache_bytes: int = 256 * 1024 * 1024):
         self.dataset_dir = Path(dataset_dir).resolve()
         self.out_dir = Path(out_dir).resolve() if out_dir else None
         if chunk_size <= 0 or cache_bytes < 0:
@@ -143,30 +154,132 @@ class CSVTelemetryStore:
         paths = list(self._paths(query))
         return self._iterate(query, paths, deadline)
 
+    @staticmethod
+    def _required_columns(query):
+        required = set(query.columns) | {"timestamp", "service" if query.source == "metric_service" else "cmdb_id"}
+        if query.operation_names is not None:
+            required.add("operation_name")
+        if query.kpi_names is not None:
+            required.add("kpi_name")
+        return required
+
+    @staticmethod
+    def _file_identity(paths):
+        entries = []
+        for path, relative in paths:
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                entries.append((relative, None, None, None, None))
+            else:
+                entries.append((relative, stat.st_size, stat.st_mtime_ns,
+                                stat.st_ctime_ns, stat.st_ino))
+        return tuple(entries)
+
+    def _covering_cache(self, query, identity, mapping_version, required):
+        """Reuse only proven-complete supersets of the requested rows/columns.
+
+        A file identity is checked again on every read. Source rows stay in their
+        original CSV order, including out-of-order times and multiline records.
+        A filtered window can cover only an equally/more restrictive filter.
+        """
+        for key in reversed(self._cache):
+            entry = self._cache[key]
+            old = entry.query
+            if old.source != query.source or old.start > query.start or old.end < query.end:
+                continue
+            if not required <= entry.columns or not set(identity) <= set(entry.identity):
+                continue
+            if old.component_ids is not None and entry.mapping_version != mapping_version:
+                continue
+            for before, after in ((old.component_ids, query.component_ids),
+                                  (old.operation_names, query.operation_names),
+                                  (old.kpi_names, query.kpi_names)):
+                if before is not None and (after is None or not set(after) <= set(before)):
+                    break
+            else:
+                self._cache.move_to_end(key)
+                return entry
+        return None
+
+    def _filter_components(self, frame, query, relative, cov):
+        raw_column = "service" if query.source == "metric_service" else "cmdb_id"
+        mappings = {raw: self._observe(query.source, str(raw), relative) for raw in frame[raw_column].unique()}
+        if query.source in {"metric_service", "metric_mesh", "metric_runtime"}:
+            frame["_component_id"] = None
+        else:
+            frame["_component_id"] = frame[raw_column].map(lambda x: mappings[x][0] if len(mappings[x]) == 1 else None)
+        if query.component_ids is not None:
+            wanted = set(query.component_ids)
+            if wanted and any(not x for x in mappings.values()):
+                warning = "Some component relationships are unknown; component filter cannot be fully resolved"
+                if warning not in cov.warnings:
+                    cov.warnings.append(warning)
+            frame = frame.loc[frame[raw_column].map(lambda raw: bool(wanted.intersection(mappings[raw])))]
+            if query.source in {"metric_service", "metric_runtime", "metric_mesh"} and wanted:
+                warning = "Service/mesh observations aggregate endpoints and cannot isolate a single pod"
+                if warning not in cov.warnings:
+                    cov.warnings.append(warning)
+        if query.operation_names is not None:
+            frame = frame.loc[frame.operation_name.isin(query.operation_names)]
+        if query.kpi_names is not None:
+            frame = frame.loc[frame.kpi_name.isin(query.kpi_names)]
+        return frame
+
+    @staticmethod
+    def _count_output(output, query, cov):
+        cov.rows_matched += len(output)
+        missing_values = output[list(query.columns)].isna() | output[list(query.columns)].eq("")
+        cov.missing_value_count = (cov.missing_value_count or 0) + int(missing_values.sum().sum())
+        first = datetime.fromtimestamp(float(output._timestamp_s.min()), UTC8)
+        last = datetime.fromtimestamp(float(output._timestamp_s.max()), UTC8)
+        cov.first_time = min(cov.first_time, first) if cov.first_time else first
+        cov.last_time = max(cov.last_time, last) if cov.last_time else last
+
     def _iterate(self, query, paths, deadline):
         qid = self.query_id(query)
         cov = Coverage(qid, query.source, status="partial")
         self._coverage[qid] = cov
-        identity = tuple((r, p.stat().st_size, p.stat().st_mtime_ns) if p.exists() else (r, None, None) for p, r in paths)
+        identity = self._file_identity(paths)
         # Catalog identity matters for service/mesh filtering, which is observation-dependent.
         mapping_version = tuple(sorted((k, v.service, v.node_id) for k, v in self._catalog.components.items())) if query.source in {"metric_service", "metric_mesh", "metric_runtime"} else ()
         key = (qid, identity, mapping_version)
+        required = self._required_columns(query)
         cache_frames, cache_size = [], 0
         missing, files_read, finished = [], 0, False
         try:
             if time.monotonic() >= deadline:
                 cov.warnings.append("Deadline reached before scan")
                 return
-            if key in self._cache:
-                frames, saved, size = self._cache[key]
-                self._cache.move_to_end(key)
-                for frame in frames:
+            cached = self._covering_cache(query, identity, mapping_version, required)
+            if cached is not None:
+                for stored in cached.frames:
                     if time.monotonic() >= deadline:
                         cov.warnings.append("Deadline reached while reading cached chunks")
                         return
-                    cov.rows_matched += len(frame)
-                    yield frame.copy(deep=True)
-                self._coverage[qid] = deepcopy(saved)
+                    cov.rows_scanned += len(stored)
+                    mask = stored._timestamp_s.ge(query.start.timestamp()) & stored._timestamp_s.lt(query.end.timestamp())
+                    frame = stored.loc[mask].copy(deep=True)
+                    if frame.empty:
+                        continue
+                    frame = self._filter_components(frame, query, str(frame._source_file.iloc[0]), cov)
+                    if frame.empty:
+                        continue
+                    output = frame.loc[:, list(query.columns) + list(LOCATORS)].reset_index(drop=True)
+                    self._count_output(output, query, cov)
+                    yield output
+                if self._file_identity(paths) != identity:
+                    cov.warnings.append("Telemetry files changed during cache read; complete coverage cannot be established")
+                    cov.status = "partial"
+                    finished = True
+                    return
+                unresolved = any("cannot be fully resolved" in w for w in cov.warnings)
+                cov.status = "partial" if unresolved else ("complete" if cov.rows_matched else "empty")
+                # The complete superset scan proved coverage of these unchanged
+                # files; this count is logical source coverage, not fresh I/O.
+                cov.rows_scanned = cached.coverage.rows_scanned
+                # Cache hits do not change observational coverage or stable IDs.
+                # I/O timing belongs in tool diagnostics, not evidence warnings.
                 finished = True
                 return
             for path, relative in paths:
@@ -176,11 +289,6 @@ class CSVTelemetryStore:
                 if not path.exists():
                     missing.append(relative)
                     continue
-                required = set(query.columns) | {"timestamp", "service" if query.source == "metric_service" else "cmdb_id"}
-                if query.operation_names is not None:
-                    required.add("operation_name")
-                if query.kpi_names is not None:
-                    required.add("kpi_name")
                 # Preserve trace/log IDs verbatim, e.g. leading zeros. Numeric columns are parsed explicitly.
                 reader = pd.read_csv(path, usecols=list(required), chunksize=self.chunk_size, dtype=str,
                                      keep_default_na=False, encoding="utf-8")
@@ -202,27 +310,7 @@ class CSVTelemetryStore:
                         frame = frame.loc[mask].copy()
                         if frame.empty:
                             continue
-                        raw_column = "service" if query.source == "metric_service" else "cmdb_id"
-                        mappings = {raw: self._observe(query.source, str(raw), relative) for raw in frame[raw_column].unique()}
-                        if query.source in {"metric_service", "metric_mesh", "metric_runtime"}:
-                            frame["_component_id"] = None
-                        else:
-                            frame["_component_id"] = frame[raw_column].map(lambda x: mappings[x][0] if len(mappings[x]) == 1 else None)
-                        if query.component_ids is not None:
-                            wanted = set(query.component_ids)
-                            if wanted and any(not x for x in mappings.values()):
-                                warning = "Some component relationships are unknown; component filter cannot be fully resolved"
-                                if warning not in cov.warnings:
-                                    cov.warnings.append(warning)
-                            frame = frame.loc[frame[raw_column].map(lambda raw: bool(wanted.intersection(mappings[raw])))]
-                            if query.source in {"metric_service", "metric_runtime", "metric_mesh"} and wanted:
-                                warning = "Service/mesh observations aggregate endpoints and cannot isolate a single pod"
-                                if warning not in cov.warnings:
-                                    cov.warnings.append(warning)
-                        if query.operation_names is not None:
-                            frame = frame.loc[frame.operation_name.isin(query.operation_names)]
-                        if query.kpi_names is not None:
-                            frame = frame.loc[frame.kpi_name.isin(query.kpi_names)]
+                        frame = self._filter_components(frame, query, relative, cov)
                         if frame.empty:
                             continue
                         frame["_source_file"] = relative
@@ -232,30 +320,33 @@ class CSVTelemetryStore:
                         if query.source.startswith("metric") and "value" in frame:
                             frame["value"] = pd.to_numeric(frame["value"], errors="coerce")
                         output = frame.loc[:, list(query.columns) + list(LOCATORS)].reset_index(drop=True)
-                        cov.rows_matched += len(output)
-                        missing_values = output[list(query.columns)].isna() | output[list(query.columns)].eq("")
-                        cov.missing_value_count = (cov.missing_value_count or 0) + int(missing_values.sum().sum())
-                        first = datetime.fromtimestamp(float(output._timestamp_s.min()), UTC8)
-                        last = datetime.fromtimestamp(float(output._timestamp_s.max()), UTC8)
-                        cov.first_time = min(cov.first_time, first) if cov.first_time else first
-                        cov.last_time = max(cov.last_time, last) if cov.last_time else last
-                        cache_size += int(output.memory_usage(index=True, deep=True).sum())
+                        self._count_output(output, query, cov)
+                        # Keep the raw columns needed for safe projection/filter
+                        # reuse, even when the original caller omitted them.
+                        retained = frame.loc[:, sorted(required) + list(LOCATORS)].reset_index(drop=True)
+                        cache_size += int(retained.memory_usage(index=True, deep=True).sum())
                         if cache_size <= self.cache_bytes:
-                            cache_frames.append(output.copy(deep=True))
+                            cache_frames.append(retained.copy(deep=True))
                         else:
                             cache_frames.clear()
                         yield output
                 finally:
                     reader.close()
             cov.warnings.extend("Missing file: " + name for name in missing)
+            if self._file_identity(paths) != identity:
+                cov.warnings.append("Telemetry files changed during scan; complete coverage cannot be established")
+                cov.status = "partial"
+                finished = True
+                return
             unresolved = any("cannot be fully resolved" in w for w in cov.warnings)
             cov.status = ("partial" if files_read else "missing") if missing else ("partial" if unresolved else ("complete" if cov.rows_matched else "empty"))
             finished = True
-            if not missing and not unresolved and cache_size <= self.cache_bytes:
-                while self._cache and self._cache_size + cache_size > self.cache_bytes:
-                    _, (_, _, old_size) = self._cache.popitem(last=False)
-                    self._cache_size -= old_size
-                self._cache[key] = (cache_frames, deepcopy(cov), cache_size)
+            if not missing and not unresolved and self.cache_bytes and cache_size <= self.cache_bytes:
+                while self._cache and (self._cache_size + cache_size > self.cache_bytes or len(self._cache) >= 128):
+                    _, previous = self._cache.popitem(last=False)
+                    self._cache_size -= previous.size
+                self._cache[key] = _CachedWindow(query, identity, mapping_version,
+                    frozenset(required), cache_frames, deepcopy(cov), cache_size)
                 self._cache_size += cache_size
         except (OSError, ValueError, pd.errors.ParserError) as exc:
             cov.status = "failed"

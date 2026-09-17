@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from tests.m4.helpers import case, response, state, Transport
 from agents.rca.routing import CHEAP, STRONG, Router, load_config, snapshot_usage, usage_delta
-from llm import LLM
+from llm import LLM, completion_options
 
 
 class TransportTests(unittest.TestCase):
@@ -42,6 +42,33 @@ class TransportTests(unittest.TestCase):
     def test_only_allowed_models(self):
         with self.assertRaises(ValueError):
             self.wrapper({}).request("other/provider", [], timeout=1)
+
+    def test_reasoning_is_counted_but_never_used_as_final_answer(self):
+        raw = {"choices": [{"finish_reason": "length", "message": {
+            "content": "", "reasoning_content": "private reasoning"}}],
+            "usage": {"completion_tokens": 1200, "completion_tokens_details": {"reasoning_tokens": 1198}}}
+        result = self.wrapper(raw).request(CHEAP[0], [], timeout=1)
+        self.assertEqual(result.error, "output_truncated")
+        self.assertIsNone(result.text)
+        self.assertEqual(result.finish_reason, "length")
+        self.assertEqual(result.reasoning_chars, 17)
+        self.assertEqual(result.reasoning_tokens, 1198)
+        self.assertNotIn("private reasoning", repr(result))
+        raw["choices"][0].update(finish_reason="stop")
+        raw["choices"][0]["message"]["content"] = "{}"
+        result = self.wrapper(raw).request(CHEAP[0], [], timeout=1)
+        self.assertIsNone(result.error)
+        self.assertEqual(result.text, "{}")
+
+    def test_injected_client_uses_same_template_options_as_worker(self):
+        calls = []
+        def create(**kwargs):
+            calls.append(kwargs)
+            return {"choices": [{"message": {"content": "{}"}}]}
+        client = LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+        for model in CHEAP:
+            client.request(model, [], timeout=1)
+            self.assertEqual(calls[-1]["extra_body"], completion_options(model))
 
 
 class RouterTests(unittest.TestCase):
@@ -98,6 +125,35 @@ class RouterTests(unittest.TestCase):
             self.state.invocation_index += 1
         self.assertEqual(len(self.state.client.calls), 2)
 
+    def test_output_and_local_budget_failures_do_not_poison_later_cases(self):
+        self.state.config.pinned_model = CHEAP[0]
+        for failure in ("output_truncated", "empty_content", "wall_deadline_exceeded",
+                        "transport_TimeoutError", "transport_timeout", "invalid_response"):
+            self.state.client = Transport([lambda m: response(m, error=failure)] * 2 + [lambda m: response(m)])
+            for _ in range(3):
+                router = self.router()
+                router.request("flash", [], reason="test", validate=json.loads)
+            self.assertEqual(len(self.state.client.calls), 3)
+            self.assertEqual(router.events[-1]["status"], "valid")
+            self.assertFalse(router.events[-1]["breaker_affected"])
+
+    def test_insufficient_useful_time_does_not_start_or_poison_model(self):
+        self.state.client = Transport([])
+        router = self.router(time.monotonic() + 6)
+        router.request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(self.state.client.calls, [])
+        self.assertEqual(self.state.model_health, {})
+
+    def test_forced_thinking_output_cap_is_included_in_reservation(self):
+        model = "zai-org/GLM-5.3-Flash"
+        self.state.config.pinned_model = model
+        self.state.client = Transport([lambda m: response(m, pt=None, ct=None)])
+        router = self.router()
+        expected = router._reserve([], model)
+        router.request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(self.state.client.calls[0][1]["max_tokens"], 2400)
+        self.assertEqual(self.state.estimated_cost_usd, expected)
+
     def test_total_http_limit_counts_failures(self):
         self.state.config.max_http_attempts_per_case = 1
         self.state.client = Transport([lambda m: response(m, error="empty_choices")])
@@ -105,6 +161,16 @@ class RouterTests(unittest.TestCase):
         router.request("flash", [], reason="test", validate=json.loads)
         router.request("strong", [], reason="test", validate=json.loads)
         self.assertEqual(len(self.state.client.calls), 1)
+
+    def test_strong_profile_applies_to_pinned_flash_stage(self):
+        self.state.config.pinned_model = 'zai-org/GLM-5.2'
+        self.state.client = Transport([lambda m: response(m)])
+        self.router(time.monotonic() + 21).request('flash', [], reason='test', validate=json.loads)
+        self.assertEqual(self.state.client.calls, [])
+        self.router(time.monotonic() + 40).request('flash', [], reason='test', validate=json.loads)
+        self.assertEqual(self.state.client.calls[0][1]['timeout'], 30.)
+        self.assertEqual(self.state.client.calls[0][1]['max_tokens'], 2400)
+        self.assertTrue(completion_options('zai-org/GLM-5.2')['chat_template_kwargs']['enable_thinking'])
 
     def test_per_case_usage_is_delta(self):
         self.state.client = Transport([lambda m: response(m)] * 2)

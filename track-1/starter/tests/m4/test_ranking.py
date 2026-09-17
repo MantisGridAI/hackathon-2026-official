@@ -32,6 +32,65 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(prepared[0].features["metrics.strength"], 12)
         self.assertEqual(len(prepared[0].features["m4.provenance"]), 2)
 
+    def test_fusion_keeps_one_observed_feature_vector(self):
+        burst, persistent = candidate("burst"), candidate("persistent")
+        burst.features.update({"metrics.calibrated_strength": 10., "metrics.persistence_samples": 1,
+                               "metrics.kpi_name": "synthetic-burst", "metrics.effect_ratio": 8.})
+        persistent.features.update({"metrics.calibrated_strength": 8., "metrics.persistence_samples": 9,
+                                    "metrics.kpi_name": "synthetic-persistent", "metrics.effect_ratio": 3.})
+        prepared = prepare_candidates(case(), [burst, persistent], Store().catalog, [evidence()])
+        fused = prepared[0]
+        fields = ("metrics.calibrated_strength", "metrics.persistence_samples", "metrics.kpi_name", "metrics.effect_ratio")
+        actual = tuple(fused.features[key] for key in fields)
+        self.assertIn(actual, [tuple(c.features[key] for key in fields) for c in (burst, persistent)])
+        original_scores = [r.score for r in rank_candidates(case(), [burst, persistent], [evidence()])]
+        self.assertLessEqual(rank_candidates(case(), prepared, [evidence()])[0].score, max(original_scores))
+        self.assertEqual(burst.features["metrics.persistence_samples"], 1)
+
+    def test_weak_direction_does_not_boost_supported_reason(self):
+        direct = candidate("matched")
+        direct.features.update({"metrics.calibrated_strength": 4., "metrics.persistence_samples": 2})
+        unmatched = candidate("decrease", reason=None)
+        unmatched.features.update({"metrics.direction": "decrease", "metrics.calibrated_strength": 10.,
+                                   "metrics.persistence_samples": 20})
+        prepared = prepare_candidates(case(), [direct, unmatched], Store().catalog, [evidence()])
+        cpu = [c for c in prepared if c.reason == "container CPU load"]
+        self.assertEqual(len(cpu), 2)
+        ranked = rank_candidates(case(), cpu, [evidence()])
+        self.assertFalse(ranked[0].candidate.features.get("m4.weak_reason"))
+        self.assertEqual(ranked[1].contributions["metric_strength"], 0.)
+        self.assertEqual(ranked[1].contributions["sustained"], 0.)
+
+    def test_fused_prompt_cites_representative_even_when_kpi_name_matches(self):
+        first, stronger = candidate("c1", eid="e1"), candidate("c2", eid="e2")
+        first.features.update({"metrics.kpi_name": "same-kpi", "metrics.calibrated_strength": 1.})
+        stronger.features.update({"metrics.kpi_name": "same-kpi", "metrics.calibrated_strength": 10.})
+        e1, e2 = evidence("e1"), evidence("e2")
+        for record, peak in ((e1, 101.), (e2, 1000.)):
+            record.transform_params = {"kpi_name": "same-kpi"}
+            record.values = {"baseline_median": 100., "window_max": peak}
+        prepared = prepare_candidates(case(), [first, stronger], Store().catalog, [e1, e2])
+        ranked = rank_candidates(case(), prepared, [e1, e2])
+        messages, _, _ = build_messages(case(), ranked, [e1, e2], stage="flash")
+        payload = json.loads(messages[1]["content"])
+        self.assertEqual(payload["candidates"][0]["supporting_ids"], ["e2"])
+        self.assertEqual(payload["evidence"][0]["values"]["window_max"], 1000.)
+
+    def test_equal_replica_is_not_a_positive_contrast(self):
+        c = candidate()
+        c.features["metrics.replica_contrast"] = 1.
+        score = rank_candidates(case(), [c], [evidence()])[0]
+        self.assertEqual(score.contributions["replica_contrast"], 0.)
+
+    def test_onset_bonus_requires_nonoverlapping_intervals(self):
+        early, late = candidate(), candidate("c2", "synthetic-peer")
+        late.onset_interval = (early.onset_interval[1], case().start + timedelta(minutes=1))
+        ranked = rank_candidates(case(), [early, late], [evidence()])
+        self.assertTrue(all(r.contributions["earlier_separable_onset"] == 0 for r in ranked))
+        late.onset_interval = tuple(t + timedelta(seconds=1) for t in late.onset_interval)
+        first = next(r for r in rank_candidates(case(), [early, late], [evidence()]) if r.candidate == early)
+        self.assertEqual(first.contributions["earlier_separable_onset"], .5)
+
     def test_unknown_network_expands_only_weak_hypotheses(self):
         source = candidate(reason=None)
         source.features = {"traces.network_family": True}

@@ -15,14 +15,17 @@ import pandas as pd
 from .contracts import (AnalysisBundle, Candidate, CaseContext, Coverage,
                         DependencyEdge, EvidenceRecord, QuerySpec, SourceRecord,
                         TelemetryStore, stable_id)
-from .network import edge_values, number, pair_spans, quantile, text
+from .network import edge_values, number, pair_spans, pair_spans_compact, quantile, text
 
 
 TRACE_COLUMNS = ("timestamp", "cmdb_id", "span_id", "trace_id", "duration",
                  "type", "status_code", "operation_name", "parent_span")
 MAX_ROWS_PER_QUERY = 150_000
-MAX_GROUPS = 512
-MAX_EDGES = 256
+# A complete 40-minute window is retained, not the first N rows. This memory
+# safety ceiling is independent of traffic rate and comfortably fits 8 GB.
+TRACE_MEMORY_BYTES = 256 * 1024 * 1024
+COMPACT_COLUMNS = ("cmdb_id", "type", "status_code", "operation_name", "log_name",
+                   "_component_id", "_source_file")
 CONTEXT_SECONDS = 30
 MIN_COMPARE_SAMPLES = 3
 COMMON_LIMITATIONS = [
@@ -37,12 +40,13 @@ EDGE_LIMITATIONS = [
 ]
 
 
-def _read_queries(queries, store, deadline, limits=None):
-    """Read bounded prefixes and always close iterators, including at a cap."""
+def _read_queries(queries, store, deadline, limits=None, *, memory_limit_bytes=None):
+    """Read complete memory-bounded windows, or explicit legacy replay prefixes."""
     frames, coverages, warnings, retained = [], [], [], []
+    retained_bytes = 0
     for index, query in enumerate(queries):
-        limit = MAX_ROWS_PER_QUERY if limits is None else int(limits[index])
-        if limit < 0 or limit > MAX_ROWS_PER_QUERY:
+        limit = (None if memory_limit_bytes is not None else MAX_ROWS_PER_QUERY) if limits is None else int(limits[index])
+        if limit is not None and (limit < 0 or (memory_limit_bytes is None and limit > MAX_ROWS_PER_QUERY)):
             raise ValueError("Invalid trace/log replay row limit")
         pieces, count, truncated = [], 0, False
         if time.monotonic() >= deadline or limit == 0:
@@ -58,12 +62,25 @@ def _read_queries(queries, store, deadline, limits=None):
                     if time.monotonic() >= query_deadline:
                         truncated = True
                         break
-                    remaining = limit - count
+                    remaining = len(chunk) if limit is None else limit - count
                     piece = chunk.iloc[:remaining].copy()
+                    if memory_limit_bytes is not None:
+                        # These fields repeat across almost every span/log row.
+                        # Encoding only low-cardinality metadata leaves raw IDs,
+                        # values and source positions exact, while avoiding a
+                        # 256 MiB false ceiling from duplicated Python strings.
+                        for column in COMPACT_COLUMNS:
+                            if column in piece:
+                                piece[column] = piece[column].astype("category")
+                    piece_bytes = int(piece.memory_usage(index=True, deep=True).sum())
+                    if memory_limit_bytes is not None and retained_bytes + piece_bytes > memory_limit_bytes:
+                        truncated = True
+                        break
                     if not piece.empty:
                         pieces.append(piece)
                         count += len(piece)
-                    if len(chunk) > remaining or count >= limit:
+                        retained_bytes += piece_bytes
+                    if limit is not None and (len(chunk) > remaining or count >= limit):
                         truncated = True
                         break
             finally:
@@ -73,7 +90,7 @@ def _read_queries(queries, store, deadline, limits=None):
             cov = store.coverage(query)
             if truncated:
                 cov = replace(cov, status="partial", warnings=list(cov.warnings) + [
-                    f"M3 retained a bounded prefix of {count} rows; row/deadline cap reached."])
+                    f"M3 retained {count} rows; input incomplete because memory/row/deadline safety limit was reached."])
         coverages.append(cov)
         retained.append(count)
         if cov.status not in ("complete", "empty"):
@@ -81,6 +98,15 @@ def _read_queries(queries, store, deadline, limits=None):
         warnings.extend(cov.warnings)
         frames.extend(pieces)
     columns = list(queries[0].columns) + ["_source_file", "_record_index", "_timestamp_s", "_component_id"] if queries else []
+    if memory_limit_bytes is not None and frames:
+        # pd.concat falls back to object strings when category sets differ
+        # between chunks; unify dictionaries before the one concatenation.
+        for column in COMPACT_COLUMNS:
+            if column in frames[0]:
+                categories = pd.api.types.union_categoricals([part[column].array for part in frames]).categories
+                dtype = pd.CategoricalDtype(categories)
+                for part in frames:
+                    part[column] = part[column].astype(dtype)
     frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
     return frame, coverages, list(dict.fromkeys(warnings)), retained
 
@@ -89,7 +115,11 @@ def _source_records(rows, limit=8):
     found = []
     seen = set()
     # Both ends of a period-spanning group provide useful positioning samples.
-    sample = rows if len(rows) <= limit else rows[:limit // 2] + rows[-(limit - limit // 2):]
+    if isinstance(rows, pd.DataFrame):
+        sample = rows if len(rows) <= limit else pd.concat([rows.head(limit // 2), rows.tail(limit - limit // 2)])
+        sample = sample.to_dict("records")
+    else:
+        sample = rows if len(rows) <= limit else rows[:limit // 2] + rows[-(limit - limit // 2):]
     for row in sample:
         file_name = text(row.get("_source_file"))
         index = number(row.get("_record_index"))
@@ -109,7 +139,8 @@ def _source_records(rows, limit=8):
 def _evidence(case, transform, params, values, components, queries, coverage,
               rows, units, limitations, kind="trace"):
     records = _source_records(rows)
-    sources = sorted({text(row.get("_source_file")) for row in rows if text(row.get("_source_file"))})
+    sources = (sorted(set(rows["_source_file"].dropna().astype(str)) - {""}) if isinstance(rows, pd.DataFrame)
+               else sorted({text(row.get("_source_file")) for row in rows if text(row.get("_source_file"))}))
     payload = {"transform": transform, "params": params, "components": components,
                "queries": queries, "values": values,
                "coverage_status": [cov.status for cov in coverage]}
@@ -144,16 +175,19 @@ def _group_values(frame, baseline_start, incident_start, incident_end):
                               ("incident", incident_start, incident_end)):
         selected = frame[(frame["_timestamp_s"] >= start) & (frame["_timestamp_s"] < end)]
         duration = pd.to_numeric(selected["duration"], errors="coerce")
-        valid = [value for value in map(number, duration.tolist()) if value is not None and value >= 0]
-        statuses = Counter(text(value) or "<missing>" for value in selected["status_code"])
-        classified = Counter(_status_class(row["status_code"], row["type"])
-                             for row in selected.to_dict("records"))
+        valid = duration[duration.ge(0) & duration.lt(float("inf"))]
+        statuses = selected["status_code"].astype("string").fillna("").replace("", "<missing>").value_counts()
+        # Classify each distinct status/type combination once, not every span.
+        classified = Counter()
+        for (status, kind), count in selected.groupby(["status_code", "type"], dropna=False, observed=True).size().items():
+            classified[_status_class(status, kind)] += int(count)
         result[label] = {
             "span_count": len(selected), "valid_duration_count": len(valid),
             "invalid_duration_count": len(selected) - len(valid),
             "observed_spans_per_minute": len(selected) * 60 / (end - start),
-            "duration_median": quantile(valid, .5), "duration_p95": quantile(valid, .95),
-            "status_counts": dict(sorted(statuses.items())),
+            "duration_median": quantile(valid.tolist(), .5),
+            "duration_p95": quantile(valid.tolist(), .95),
+            "status_counts": dict(sorted((str(k), int(v)) for k, v in statuses.items())),
             "recognized_success_count": classified["success"],
             "recognized_error_count": classified["error"],
             "unknown_status_count": classified["unknown"],
@@ -170,6 +204,14 @@ def _group_values(frame, baseline_start, incident_start, incident_end):
 
 
 def _queries(case):
+    # One scan retains both periods and boundary context. Splitting this query
+    # formerly scanned the same 1.3 GB daily trace file twice and capped incident
+    # traffic at 150k rows, dropping the latter part of busy windows.
+    return [QuerySpec("trace_span", case.reference_start - timedelta(seconds=CONTEXT_SECONDS),
+                      case.end + timedelta(seconds=CONTEXT_SECONDS), TRACE_COLUMNS)]
+
+
+def _legacy_queries(case):
     return [
         QuerySpec("trace_span", case.reference_start - timedelta(seconds=CONTEXT_SECONDS),
                   case.start, TRACE_COLUMNS),
@@ -180,7 +222,8 @@ def _queries(case):
 def _params(case, retained):
     return {"baseline_start_s": case.reference_start.timestamp(), "incident_start_s": case.start.timestamp(),
             "incident_end_s": case.end.timestamp(), "retained_rows_per_query": retained,
-            "row_cap_per_query": MAX_ROWS_PER_QUERY, "context_seconds": CONTEXT_SECONDS,
+            "memory_limit_bytes": TRACE_MEMORY_BYTES, "query_layout": "covering-window.v2",
+            "context_seconds": CONTEXT_SECONDS,
             "duration_unit": "native/unknown", "minimum_compare_samples": MIN_COMPARE_SAMPLES,
             "duration_ratio_threshold": 2.0, "p95_ratio_threshold": 2.5,
             "error_fraction_delta_threshold": .2, "status_rule": "explicit-status-and-http.v1"}
@@ -190,8 +233,9 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
     queries = _queries(case)
     remaining = max(0.0, deadline - time.monotonic())
     # Reserve some of the caller's actual budget for materializing evidence.
-    scan_deadline = deadline - min(6.0, remaining * .25)
-    frame, coverage, warnings, retained = _read_queries(queries, store, scan_deadline)
+    scan_deadline = deadline - min(3.0, remaining * .15)
+    frame, coverage, warnings, retained = _read_queries(queries, store, scan_deadline,
+                                                      memory_limit_bytes=TRACE_MEMORY_BYTES)
     bundle = AnalysisBundle(module="m3", coverage=coverage, warnings=warnings)
     params = _params(case, retained)
     if frame.empty:
@@ -204,10 +248,10 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
     baseline, incident, end = (params[key] for key in ("baseline_start_s", "incident_start_s", "incident_end_s"))
     in_period = frame[(frame["_timestamp_s"] >= baseline) & (frame["_timestamp_s"] < end)]
     focus = in_period[in_period["_component_id"].isin(selected)] if selected is not None else in_period
-    grouped = focus.groupby(["_component_id", "operation_name", "type"], sort=True, dropna=False)
+    grouped = focus.groupby(["_component_id", "operation_name", "type"], sort=True, dropna=False, observed=True)
     for index, (key, group) in enumerate(grouped):
-        if index >= MAX_GROUPS or time.monotonic() >= deadline:
-            bundle.warnings.append("Trace group analysis stopped at group/deadline limit; unanalysed groups are unknown.")
+        if time.monotonic() >= deadline:
+            bundle.warnings.append("Trace group analysis stopped at deadline; unanalysed groups are unknown.")
             break
         component, operation, span_type = key
         if not component:
@@ -220,8 +264,8 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
             limitations.append("Low sample count: empirical p95 is descriptive and unstable, not a reliable tail estimate.")
         if before["unknown_status_count"] or after["unknown_status_count"]:
             limitations.append("Unrecognized status codes remain unknown; nonzero is not automatically an error.")
-        record = _evidence(case, "traces.group_compare.v1", group_params, values, [component], queries,
-                           coverage, group.to_dict("records"),
+        record = _evidence(case, "traces.group_compare.v2", group_params, values, [component], queries,
+                           coverage, group,
                            {"duration_median": "native/unknown", "duration_p95": "native/unknown",
                             "span_count": "count", "observed_spans_per_minute": "observed spans/minute",
                             "duration_ratio": "ratio", "p95_ratio": "ratio", "frequency_ratio": "ratio",
@@ -248,10 +292,14 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
     if time.monotonic() >= deadline:
         bundle.warnings.append("Deadline exhausted before dependency pairing; topology not queried by transform.")
         return bundle
-    groups, pairing_counts = pair_spans(frame)
+    try:
+        groups, pairing_counts = pair_spans_compact(frame, deadline=deadline)
+    except TimeoutError:
+        bundle.warnings.append("Deadline exhausted during dependency pairing; no incomplete topology presented as complete.")
+        return bundle
     pairing_counts["padding_context_rows"] = len(frame) - len(in_period)
-    health = _evidence(case, "traces.pairing_quality.v1", params, pairing_counts, [], queries, coverage,
-                       frame.head(8).to_dict("records"), {"pairing_fraction": "fraction"},
+    health = _evidence(case, "traces.pairing_quality.v2", params, pairing_counts, [], queries, coverage,
+                       frame.head(8), {"pairing_fraction": "fraction"},
                        EDGE_LIMITATIONS + warnings)
     # Include all source files even though the positioning sample is intentionally tiny.
     health.source_files = sorted(set(frame["_source_file"].map(text)) - {""})
@@ -262,8 +310,8 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
         caller, callee, operation = key
         if selected is not None and caller not in selected and callee not in selected and key not in edge_keys:
             continue
-        if edge_number >= MAX_EDGES or time.monotonic() >= deadline:
-            bundle.warnings.append("Dependency analysis stopped at edge/deadline cap; remaining edges unknown.")
+        if time.monotonic() >= deadline:
+            bundle.warnings.append("Dependency analysis stopped at deadline; remaining edges unknown.")
             break
         edge_number += 1
         pairs = groups[key]
@@ -271,7 +319,11 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
         if not values["baseline"]["paired_count"] and not values["incident"]["paired_count"]:
             continue  # Context-only pairs are not in-window evidence.
         edge_params = dict(params, caller=caller, callee=callee, operation=operation)
-        rows = [row for pair in pairs for row in (pair["parent"], pair["child"])]
+        # Evidence keeps only positioning samples, not repeated dictionaries for
+        # every parent and child. Aggregates still consume every paired span.
+        sample_pairs = pd.concat([pairs.head(4), pairs.tail(4)]) if len(pairs) > 8 else pairs
+        positions = sample_pairs[["_parent_row", "_child_row"]].to_numpy().ravel()
+        rows = frame.iloc[positions]
         limitations = EDGE_LIMITATIONS + warnings
         if min(values["baseline"]["paired_count"], values["incident"]["paired_count"]) < 20:
             limitations += ["Low pair sample count: gap quantiles and changes are uncertain."]
@@ -279,9 +331,11 @@ def _analyze(case, store, deadline, selected=None, selected_edges=()):
             limitations += ["Negative start differences observed; clock skew or asynchronous semantics may apply."]
         if len(set().union(*(values[label]["type_pair_counts"] for label in ("baseline", "incident")))) > 1:
             limitations += ["Mixed span-type relationships: start-gap comparison is semantically heterogeneous."]
-        record = _evidence(case, "network.start_gap_compare.v1", edge_params, values, sorted({caller, callee}),
+        record = _evidence(case, "network.start_gap_compare.v2", edge_params, values, sorted({caller, callee}),
                            queries, coverage, rows, {"start_gap_median_s": "seconds", "start_gap_p95_s": "seconds",
                            "paired_count": "count", "start_gap_ratio": "ratio"}, limitations)
+        all_positions = pairs[["_parent_row", "_child_row"]].to_numpy().ravel()
+        record.source_files = sorted(set(frame["_source_file"].iloc[all_positions].dropna().astype(str)) - {""})
         bundle.evidence.append(record)
         bundle.edges.append(DependencyEdge(
             edge_id=stable_id(case.case_key, "m3.edge", {"caller": caller, "callee": callee, "operation": operation,
@@ -312,11 +366,13 @@ def inspect_dependencies(case: CaseContext, component_ids: tuple[str, ...],
     for edge in edges:
         if not isinstance(edge, DependencyEdge) or not edge.edge_id.startswith("m3.edge:") or not edge.supporting_ids:
             raise ValueError("inspect_dependencies requires actual M3 DependencyEdge objects")
-        expected = stable_id(case.case_key, "m3.edge", {
+        expected = {stable_id(case.case_key, "m3.edge", {
             "caller": edge.caller, "callee": edge.callee, "operation": edge.operation or "",
-            "queries": _queries(case), "transform": "network.start_gap_compare.v1",
-            "supporting_ids": edge.supporting_ids})
-        if edge.edge_id != expected:
+            "queries": queries, "transform": transform,
+            "supporting_ids": edge.supporting_ids}) for queries, transform in (
+                (_legacy_queries(case), "network.start_gap_compare.v1"),
+                (_queries(case), "network.start_gap_compare.v2"))}
+        if edge.edge_id not in expected:
             raise ValueError("DependencyEdge does not match this case's M3 producer signature")
     selected = set(component_ids) | {component for edge in edges for component in (edge.caller, edge.callee)}
     if not selected:
@@ -330,21 +386,25 @@ def replay_evidence(record: EvidenceRecord, store: TelemetryStore, *, deadline: 
     if record.transform.startswith("logs."):
         from .logs import _replay_log_evidence
         return _replay_log_evidence(record, store, deadline=deadline)
-    if record.transform not in ("traces.group_compare.v1", "traces.pairing_quality.v1", "network.start_gap_compare.v1"):
+    supported = {f"{kind}.v{version}" for kind in ("traces.group_compare", "traces.pairing_quality", "network.start_gap_compare")
+                 for version in (1, 2)}
+    if record.transform not in supported:
         raise ValueError(f"Unsupported M3 evidence transform: {record.transform}")
     params = record.transform_params
-    frame, coverage, _, retained = _read_queries(record.queries, store, deadline, params["retained_rows_per_query"])
+    modern = record.transform.endswith(".v2")
+    frame, coverage, _, retained = _read_queries(record.queries, store, deadline, params["retained_rows_per_query"],
+        memory_limit_bytes=params.get("memory_limit_bytes", TRACE_MEMORY_BYTES) if modern else None)
     if retained != params["retained_rows_per_query"]:
         raise TimeoutError("Replay did not recover the recorded input prefix; values are not verified")
     baseline, incident, end = (params[key] for key in ("baseline_start_s", "incident_start_s", "incident_end_s"))
     frame["_timestamp_s"] = pd.to_numeric(frame["_timestamp_s"], errors="coerce")
-    if record.transform == "traces.group_compare.v1":
+    if record.transform.startswith("traces.group_compare."):
         mask = ((frame["_component_id"].map(text) == params["component"]) &
                 (frame["operation_name"].map(text) == params["operation"]) &
                 (frame["type"].map(text) == params["span_type"]))
         return _group_values(frame[mask], baseline, incident, end)
-    groups, counts = pair_spans(frame)
-    if record.transform == "traces.pairing_quality.v1":
+    groups, counts = pair_spans_compact(frame, deadline=deadline) if modern else pair_spans(frame)
+    if record.transform.startswith("traces.pairing_quality."):
         counts["padding_context_rows"] = int(((frame["_timestamp_s"] < baseline) | (frame["_timestamp_s"] >= end)).sum())
         return counts
     key = (params["caller"], params["callee"], params["operation"])

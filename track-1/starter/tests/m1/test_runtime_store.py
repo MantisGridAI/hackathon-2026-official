@@ -175,7 +175,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(state.invocation_index, 1)
         self.assertIs(state, get_run_state(self.root, ctx, RunConfig()))
         self.assertEqual(state.invocation_index, 2)
-        self.assertLess(state.deadline, time.monotonic()+1080-4)
+        self.assertLess(state.deadline, time.monotonic()+state.config.run_soft_seconds-4)
         with self.assertRaises(ValueError):
             get_run_state(self.root / "other", ctx, RunConfig())
 

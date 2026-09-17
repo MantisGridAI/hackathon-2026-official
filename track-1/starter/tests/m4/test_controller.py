@@ -10,8 +10,8 @@ from unittest.mock import Mock, patch
 
 from tests.m4.helpers import bundle, candidate, case, evidence, response, state, Transport
 from agents.rca.contracts import AnalysisBundle, InvestigationResult, RenderedResult
-from agents.rca.controller import _bypass_limitations, investigate
-from agents.rca.ranking import make_decision
+from agents.rca.controller import _bypass_limitations, _followup_plan, _escalation_reason, investigate
+from agents.rca.ranking import Ranked, make_decision
 from agents.rca.routing import CHEAP
 
 
@@ -24,8 +24,10 @@ class ControllerTests(unittest.TestCase):
             compare_replicas_and_node=Mock(return_value=AnalysisBundle("m2")))
         self.traces = SimpleNamespace(triage_traces=Mock(return_value=AnalysisBundle("m3")),
             inspect_dependencies=Mock(return_value=AnalysisBundle("m3")))
+        self.logs = SimpleNamespace(search_fault_evidence=Mock(return_value=AnalysisBundle("m3")))
         self.modules = patch.dict("sys.modules", {"agents.rca.metrics": self.metrics,
-                                                 "agents.rca.traces": self.traces})
+                                                 "agents.rca.traces": self.traces,
+                                                 "agents.rca.logs": self.logs})
         self.modules.start()
         self.addCleanup(self.modules.stop)
 
@@ -42,7 +44,57 @@ class ControllerTests(unittest.TestCase):
     def test_at_most_one_followup(self):
         self.run_case()
         self.assertEqual(self.metrics.compare_replicas_and_node.call_count +
-                         self.traces.inspect_dependencies.call_count, 1)
+                         self.traces.inspect_dependencies.call_count + self.logs.search_fault_evidence.call_count, 1)
+
+    def test_followup_plan_routes_question_to_relevant_tool(self):
+        item = candidate()
+        rank = [Ranked(item, 4., {})]
+        self.assertEqual(_followup_plan(rank, [])['tool'], 'compare_replicas_and_node')
+        item.features['metrics.family'] = 'process'
+        self.assertEqual(_followup_plan(rank, [])['tool'], 'search_fault_evidence')
+        item.features = {'traces.anomaly_score': 3.}
+        self.assertEqual(_followup_plan(rank, [object()])['tool'], 'inspect_dependencies')
+        self.assertEqual(_followup_plan(rank, [])['tool'], 'search_fault_evidence')
+
+    def test_process_hypothesis_executes_one_log_followup(self):
+        self.metrics.triage_metrics.return_value.candidates[0].features['metrics.family'] = 'process'
+        result = self.run_case()
+        self.logs.search_fault_evidence.assert_called_once()
+        self.metrics.compare_replicas_and_node.assert_not_called()
+        plans = [e for e in result.decision.route_events if e['event'] == 'followup_plan']
+        self.assertEqual(plans[0]['tool'], 'search_fault_evidence')
+        self.assertIn('OOM', plans[0]['question'])
+
+    def test_strong_escalation_requires_measured_unresolved_competition(self):
+        a, b = candidate(), candidate('c2', 'synthetic-peer', eid='e2')
+        ranked = [Ranked(a, 6., {}), Ranked(b, 5.5, {})]
+        records = [evidence(), evidence('e2', 'synthetic-peer')]
+        reply = dict(confidence='low', unresolved=['Two measured resource mechanisms remain plausible'])
+        self.assertEqual(_escalation_reason(reply, [a], ranked, records), 'unresolved_competing_observations')
+        records[1].coverage[0].status = 'partial'
+        self.assertIsNone(_escalation_reason(reply, [a], ranked, records))
+        records[1].coverage[0].status = 'complete'
+        b.features['m4.weak_reason'] = True
+        self.assertIsNone(_escalation_reason(reply, [a], ranked, records))
+
+    def test_workflow_status_distinguishes_valid_output_from_truncated_tools(self):
+        from agents.routed import _workflow_status
+        result = self.run_case()
+        self.assertTrue(_workflow_status(result.decision, 'valid')['complete'])
+        result.decision.route_events[0]['status'] = 'incomplete'
+        summary = _workflow_status(result.decision, 'valid')
+        self.assertFalse(summary['complete'])
+        self.assertIn('tool:triage_metrics', summary['interruptions'])
+
+    def test_historical_selection_is_not_reported_as_final_fallback_adoption(self):
+        from agents.routed import _workflow_status
+        result = self.run_case()
+        result.fallback.route_events.append(dict(event='selection', selection_applied=True, stage='flash'))
+        result.fallback.route_events.append(dict(event='render_fallback', status='applied'))
+        summary = _workflow_status(result.fallback, 'valid')
+        self.assertFalse(summary['complete'])
+        self.assertFalse(summary['model_selection_applied'])
+        self.assertIn('preferred_decision_rejected', summary['interruptions'])
 
     def test_all_models_fail_keeps_best_guess_and_real_usage(self):
         self.state.config.mode = "routed"
@@ -90,11 +142,29 @@ class ControllerTests(unittest.TestCase):
     def test_partial_coverage_caps_confidence(self):
         self.metrics.triage_metrics.return_value.evidence[0].coverage[0].status = "partial"
         self.state.config.mode = "routed"
-        self.state.config.max_model_stages = 1
         reply = dict(selected_candidate_ids=["c1"], confidence="high",
                      supporting_evidence_ids=["e1"], unresolved=[], next_query=None)
         self.state.client = Transport([lambda m: response(m, json.dumps(reply))])
-        self.assertEqual(self.run_case().decision.confidence, "low")
+        result = self.run_case()
+        self.assertEqual(result.decision.confidence, "low")
+        self.assertEqual(result.decision.stop_reason, "flash_selection")
+        self.assertEqual(len(self.state.client.calls), 1)
+        applied = [e for e in result.decision.route_events if e.get("selection_applied")]
+        self.assertEqual(applied[0]["selected_candidate_ids"], ["c1"])
+
+    def test_telemetry_and_followup_leave_model_reservation(self):
+        self.state.config.mode = "routed"
+        self.state.config.pinned_model = CHEAP[0]
+        self.state.config.max_model_stages = 1
+        self.state.client = Transport([lambda m: response(m, error="empty_content")])
+        with patch("agents.rca.controller.time.monotonic", return_value=100.):
+            investigate(case(), self.state, deadline=145.)
+        metric_deadline = self.metrics.triage_metrics.call_args.kwargs["deadline"]
+        trace_deadline = self.traces.triage_traces.call_args.kwargs["deadline"]
+        followup = self.metrics.compare_replicas_and_node.call_args
+        self.assertLess(metric_deadline, trace_deadline)
+        self.assertEqual(trace_deadline, 123.)
+        self.assertLessEqual(followup.kwargs["deadline"], 123.)
 
     def test_invalid_renderer_retries_only_once_and_settles_usage(self):
         from agents import routed

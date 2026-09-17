@@ -14,7 +14,7 @@ from agents.rca.metrics import triage_metrics, replay_evidence
 case = parse_case(instruction)
 store = CSVTelemetryStore(Path(dataset_dir))
 bundle = triage_metrics(case, store, deadline=time.monotonic() + 40)
-record = next(record for record in bundle.evidence if record.transform == 'metrics.baseline_compare.v1')
+record = next(record for record in bundle.evidence if record.transform == 'metrics.baseline_compare.v2')
 assert replay_evidence(record, store, deadline=time.monotonic() + 40) == record.values
 ```
 
@@ -32,6 +32,6 @@ The other public functions are `inspect_metrics(case, component_ids, metric_fami
 
 Missing, empty, partial, and deadline coverage is returned explicitly; none means healthy. Unknown topology is not guessed. Every transform records the exact retained input-prefix length per query. Replay uses that same prefix, including partial and row-capped input, and raises when the original prefix cannot be recovered. Missing reference data yields descriptive evidence without an unsupported anomaly onset. Node cochange is `None` when node measurements cannot establish it.
 
-Scans retain at most 250,000 matched window rows/source. Evidence retains at most 512 series/source, prioritizing one per observed component/family and then strength; truncation warns that recall is incomplete. Comparisons include at most 24 observed components. Real tested windows hit the evidence cap. Many resource candidates are expected; M4 owns cross-source ranking and exact fault count.
+Scans retain at most 250,000 matched window rows/source and explicitly report partial coverage at that safety limit. All analysed series are retained; the former 512-series cutoff has been removed. Sources borrow unused module time while reserving a small amount for subsequent sources; the module deadline still applies. Comparisons include at most 24 observed components. Many resource candidates are expected; M4 owns cross-source ranking, the explicit model shortlist, and exact fault count.
 
 Official KPI gauge/counter semantics are unconfirmed, so the runtime preserves raw values and `native/unknown` units. Counter reset handling exists for explicitly verified semantics; the default verification registry is empty. Resource mechanism labels remain hypotheses. Network hints cannot identify a legal network subtype. Service names may not map to pod service names, in which case no service clue is attached. Onset estimates are midpoints of observed intervals, with sampling gaps/precision disclosed. These two windows do not measure general accuracy, candidate recall, or hidden-test performance.

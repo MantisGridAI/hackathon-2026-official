@@ -1,6 +1,14 @@
 # Track 1: bounded, evidence-backed RCA agent
 
-The five-module agent is implemented in the official `track-1/starter/` runtime. It reads only whitelisted telemetry, builds replayable metric/trace/log observations, ranks bounded hypotheses, optionally asks permitted GLM models to select among those hypotheses, and deterministically renders the requested answer fields and four evidence sections. The available real measurements show a working integration with limited diagnostic accuracy. A small paid same-agent comparison exposed oversized prompts and request-deadline defects; Docker acceptance remains unmeasured.
+The five-module agent is implemented in the official `track-1/starter/` runtime. It reads only whitelisted telemetry, builds replayable metric/trace/log observations, ranks bounded hypotheses, optionally asks permitted GLM models to select among those hypotheses, and deterministically renders the requested answer fields and four evidence sections. Diagnostic accuracy remains limited. The latest repair checkpoint includes an enforced Docker resource measurement and real model participation; earlier experiments below retain their original scope and limitations.
+
+## Latest workflow repair checkpoint
+
+The [20-case repair run](eval/results/workflow-repair-20260917/README.md) returned all 20 public-development answers, with official mean partial **0.346** and **5/20 fully solved**. All final answers retained model selections; **19/20 planned workflows completed**. One planned Strong upgrade timed out, with insufficient remaining time for its fallback, and is explicitly incomplete despite retaining a correct Flash answer.
+
+The default CLI completed in **608.960 seconds** under Docker-enforced **2 CPUs / 8 GiB**, with read-only inputs and root filesystem. Python child peak RSS was 494,301,184 bytes; cgroup peak memory, including other container/cache usage, was 2,195,165,184 bytes. There were 36 valid responses, three timeouts and two empty responses, with no reported output-token truncation. Observed token cost was $0.113872955; three timed-out requests have unknown usage and retained reservations of $0.0306708, so total billing is not established.
+
+This checkpoint removes repeated window scans and arbitrary trace/metric-result cutoffs, corrects candidate strength/evidence handling, and separates workflow completion from formatted-output validity. Offline discovery passed 178 tests with five real checks skipped; those five were separately run and passed. A six-transform sample from the new 4,920-record row-0 ledger replayed exactly, with all 34 sampled locators found. Full 70-case accuracy, repeated variance, a new matched single-model comparison and causal review are not established by this run. Detailed evidence, immutable runtime hashes and limitations are in the linked checkpoint.
 
 ## Actual development results
 
@@ -47,7 +55,7 @@ Each evidence record stores query definitions, source paths, original record loc
 
 Missing, empty, partial, failed and unqueried coverage never means healthy. Every case retains a best guess; doubts belong in evidence. The validator distinguishes malformed/contradicted answers from unknown catalog coverage. Development labels are used only by the offline evaluator. Real source data is never used as an answer lookup table.
 
-The measured diagnostic failures remain substantial. Generic resource changes can outrank the causal component; correlated CPU, memory and I/O changes are difficult to separate. Weak network hints cannot establish packet-loss/corruption/retransmission subtypes. Missing reference samples, sparse traces, partial scans and ambiguous episode separation reduce reliability. The current bounded metric evidence cap can reduce candidate recall and explicitly reports that limitation. The report does not infer a general accuracy increase from two windows or compare this eight-case result with the official heuristic's different 70-case denominator.
+The measured diagnostic failures remain substantial. Generic resource changes can outrank the causal component; correlated CPU, memory and I/O changes are difficult to separate. Weak network hints cannot establish packet-loss/corruption/retransmission subtypes. Missing reference samples, sparse traces, partial scans and ambiguous episode separation reduce reliability. The earlier 512-series metric evidence cutoff was removed in the repair checkpoint; the explicit model shortlist still limits which alternatives receive model review. The report does not infer a general accuracy increase from two windows or compare this eight-case result with the official heuristic's different 70-case denominator.
 
 ## Evaluation and remaining acceptance
 
@@ -65,8 +73,8 @@ Serialized model messages now have a global limit of **48,000 UTF-8 bytes**, wit
 
 Still unmeasured:
 
-- Repeat variance, broader routing quality/cost tradeoffs, and paid-provider behavior after the subsequent prompt/deadline corrections. The authorized two-case comparison was not expanded or rerun.
-- Docker build/run under enforced 2 CPU / 8 GB container constraints: Docker was unavailable. Native measurements are reported separately.
+- Repeat variance and broader matched routing quality/cost tradeoffs. The later 20-case repair run is not a rerun of the historical two-case comparison.
+- Complete workflow acceptance: Docker 2 CPU / 8 GB measurement now exists, but the repair checkpoint still has one unfinished Strong escalation.
 - Full 70-case development accuracy, held-out deployment accuracy, calibrated confidence and causal explanation review.
 
 Reproduce the comparison plan with `python eval/run_comparison.py --help` and the dry-run command in [`eval/README.md`](eval/README.md). Actual model runs require the supplied Featherless endpoint/key and a new output directory. The small measured cost difference above is not a general routing-savings claim.

@@ -24,6 +24,7 @@ from typing import Any
 from cost import PRICES
 
 DEFAULT_BASE_URL = "https://api.featherless.ai/v1"
+USER_AGENT = "MantisGrid-RCA/1.0"
 MAX_WORKER_INPUT_BYTES = 200_000
 MAX_RESPONSE_BYTES = 262_144
 
@@ -48,6 +49,24 @@ class AttemptResult:
     completion_tokens: int | None
     error: str | None = None
     request_started: bool = True
+    finish_reason: str | None = None
+    content_chars: int = 0
+    reasoning_chars: int = 0
+    reasoning_tokens: int | None = None
+
+
+def completion_options(model: str) -> dict:
+    """Featherless template controls for bounded, one-shot JSON selection.
+
+    5.3-Flash has forced thinking: ask for low effort, never claim it is off.
+    Other GLMs use the provider's template switch (not Z.ai's native API).
+    These are requested modes, not proof that a deployment honored them.
+    """
+    if model == "zai-org/GLM-5.3-Flash":
+        return {"reasoning_effort": "low"}
+    if model == "zai-org/GLM-5.2":
+        return {"chat_template_kwargs": {"enable_thinking": True}}
+    return {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def _decode_response(model, response):
@@ -59,6 +78,9 @@ def _decode_response(model, response):
     ct = _tokens(_field(usage, "completion_tokens"))
     error = None
     text = None
+    finish_reason = None
+    content_chars = reasoning_chars = 0
+    reasoning_tokens = _tokens(_field(_field(usage, "completion_tokens_details"), "reasoning_tokens"))
     if _field(response, "error") is not None:
         error = "provider_error_body"
     elif actual not in PRICES:
@@ -68,14 +90,29 @@ def _decode_response(model, response):
         if not isinstance(choices, (list, tuple)) or not choices:
             error = "empty_choices"
         else:
-            content = _field(_field(choices[0], "message"), "content")
+            finish = _field(choices[0], "finish_reason")
+            finish_reason = finish if finish in ("stop", "length", "tool_calls", "content_filter", "function_call") else None
+            message = _field(choices[0], "message")
+            content = _field(message, "content")
+            reasoning = _field(message, "reasoning_content") or _field(message, "reasoning")
+            reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
+            content_chars = len(content) if isinstance(content, str) else 0
             if not isinstance(content, str):
                 error = "empty_content"
             else:
+                reasoning_chars += sum(len(s) for s in re.findall(r"<think>(.*?)</think>", content, flags=re.S))
                 text = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+                if "<think>" in text:
+                    # An unfinished reasoning section is never a final answer.
+                    reasoning_chars += len(text.split("<think>", 1)[1])
+                    text = None
                 if not text:
                     error = "empty_content"
-    return AttemptResult(str(actual), text, pt, ct, error)
+            if finish_reason == "length":
+                error = "output_truncated"
+                text = None
+    return AttemptResult(str(actual), text, pt, ct, error, True, finish_reason,
+                         content_chars, reasoning_chars, reasoning_tokens)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -107,10 +144,13 @@ def _worker_request(payload):
     if remaining <= 0:
         return AttemptResult(model, None, None, None, "worker_startup_deadline", False)
     body = json.dumps({"model": model, "messages": payload["messages"],
-                       "max_tokens": payload["max_tokens"], "temperature": 0},
+                       "max_tokens": payload["max_tokens"], "temperature": 0,
+                       **completion_options(model)},
                       ensure_ascii=False, allow_nan=False).encode("utf-8")
     request = urllib.request.Request(base + "/chat/completions", data=body, method="POST",
-        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+        # Identify our client explicitly: the provider rejects urllib's default UA.
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json",
+                 "User-Agent": USER_AGENT})
     opener = urllib.request.build_opener(_NoRedirect())
     # A flushed marker distinguishes initialization failure from an HTTP attempt.
     print(json.dumps({"phase": "request_started"}), flush=True)
@@ -129,6 +169,10 @@ def _worker_request(payload):
                   429: "RateLimitError"}
         return AttemptResult(model, None, None, None,
                              "transport_" + errors.get(exc.code, "InternalServerError" if exc.code >= 500 else "HTTP" + str(exc.code)))
+    except urllib.error.URLError as exc:
+        # urllib may wrap a socket timeout before the parent wall timer fires.
+        kind = "TimeoutError" if isinstance(exc.reason, TimeoutError) else "URLError"
+        return AttemptResult(model, None, None, None, "transport_" + kind)
     except Exception as exc:
         # Never include an exception message, raw response body, URL or headers.
         return AttemptResult(model, None, None, None, "transport_" + type(exc).__name__)
@@ -179,7 +223,7 @@ class LLM:
         try:
             response = self.client.chat.completions.create(
                 model=model, messages=messages, timeout=timeout,
-                max_tokens=max_tokens, temperature=0)
+                max_tokens=max_tokens, temperature=0, extra_body=completion_options(model))
         except Exception as exc:
             # Never record exception text: it may contain credentials/request data.
             return AttemptResult(model, None, None, None,

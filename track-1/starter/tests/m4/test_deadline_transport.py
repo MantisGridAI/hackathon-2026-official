@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from llm import LLM, MAX_RESPONSE_BYTES
+from llm import LLM, MAX_RESPONSE_BYTES, USER_AGENT, completion_options
 from agents.rca.routing import CHEAP, Router
 from tests.m4.helpers import case, state
 
@@ -21,7 +21,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.server.paths.append(self.path)
-        self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        self.server.user_agents.append(self.headers.get("User-Agent"))
+        self.server.bodies.append(json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0")))))
         mode = self.server.mode
         if mode == "redirect":
             self.send_response(302)
@@ -61,6 +62,8 @@ class DeadlineTransportTests(unittest.TestCase):
         self.server.daemon_threads = True
         self.server.mode = "success"
         self.server.paths = []
+        self.server.user_agents = []
+        self.server.bodies = []
         self.server.stop_trickle = threading.Event()
         self.server.connection_closed = threading.Event()
         self.server.base_url = f"http://127.0.0.1:{self.server.server_port}/v1"
@@ -86,6 +89,14 @@ class DeadlineTransportTests(unittest.TestCase):
         self.assertEqual(result.text, "{}")
         self.assertEqual(result.prompt_tokens, 20)
         self.assertEqual(self.server.paths, ["/v1/chat/completions"])
+        self.assertEqual(self.server.user_agents, [USER_AGENT])
+        for key, value in completion_options(CHEAP[0]).items():
+            self.assertEqual(self.server.bodies[0][key], value)
+
+    def test_forced_thinking_model_requests_low_effort(self):
+        LLM().request("zai-org/GLM-5.3-Flash", [], timeout=3)
+        self.assertEqual(self.server.bodies[0]["reasoning_effort"], "low")
+        self.assertNotIn("chat_template_kwargs", self.server.bodies[0])
 
     def test_trickling_response_is_killed_and_reaped_at_wall_deadline(self):
         self.server.mode = "trickle"
@@ -130,7 +141,8 @@ class DeadlineTransportTests(unittest.TestCase):
         with TemporaryDirectory() as output:
             run = state(output, mode="routed", pinned_model=CHEAP[0])
             router = Router(case(), run, deadline=time.monotonic() + 2.8)
-            router.request("flash", [], reason="synthetic_test", validate=json.loads)
+            with patch("agents.rca.routing.MIN_REQUEST_SECONDS", .1):
+                router.request("flash", [], reason="synthetic_test", validate=json.loads)
             self.assertEqual(run.usage_ledger[CHEAP[0]]["calls"], 1)
             self.assertEqual(run.usage_ledger[CHEAP[0]]["unknown_usage_calls"], 1)
             self.assertGreater(run.estimated_cost_usd, 0)

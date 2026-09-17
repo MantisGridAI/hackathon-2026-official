@@ -246,7 +246,7 @@ def audit_run(manifest, output_dir, dev_queries):
             case_unknown = True
         unknown_usage |= case_unknown
         timing = [record.get("wall_s") for record in usage if isinstance(record.get("wall_s"), (int, float))]
-        if any(route.get("status") not in {"valid", "bypass"} for route in routes_by_id[rid]):
+        if any(route.get("status") != "valid" for route in case_requests):
             tags.append("provider_or_model_response")
         task = label.get("task_index", "unknown") if label else "unknown"
         cases.append({"row_id": rid, "task": task, "difficulty": DIFFICULTY.get(task, "unknown"),

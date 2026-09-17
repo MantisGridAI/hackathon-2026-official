@@ -40,6 +40,11 @@ def _number(features, key, default=0.):
 def _compatible(left, right):
     if left.component != right.component or left.reason != right.reason:
         return False
+    # A legal label expanded from an unknown mechanism is not corroboration of
+    # a directionally matched resource signal. Keep both hypotheses available,
+    # without laundering the weak one's features into a supported mechanism.
+    if bool(left.features.get("m4.weak_reason")) != bool(right.features.get("m4.weak_reason")):
+        return False
     if left.onset_interval is not None and right.onset_interval is not None:
         return max(left.onset_interval[0], right.onset_interval[0]) <= min(left.onset_interval[1], right.onset_interval[1])
     return left.episode_id == right.episode_id
@@ -52,6 +57,7 @@ def prepare_candidates(case, candidates, catalog, evidence):
         candidate = deepcopy(original)
         if set(candidate.supporting_ids + candidate.contradicting_ids) - known_ids:
             raise EvidenceCollision("Candidate contains an unknown evidence reference")
+        candidate.features["m4.representative_supporting_ids"] = list(candidate.supporting_ids)
         observed = catalog.components.get(candidate.component)
         legal = NODE_REASONS if observed and observed.kind == "node" else CONTAINER_REASONS
         if candidate.reason is not None and (candidate.reason not in LEGAL_REASONS or
@@ -79,21 +85,26 @@ def prepare_candidates(case, candidates, catalog, evidence):
         if existing is None:
             groups.append(candidate)
             continue
-        # Correlated KPIs contribute their maximum, never their sum.
-        for key, value in candidate.features.items():
-            if key not in existing.features:
-                existing.features[key] = value
-            elif isinstance(value, (int, float)) and not isinstance(value, bool):
-                previous = existing.features[key]
-                if isinstance(previous, (int, float)):
-                    existing.features[key] = max(previous, value)
+        # Select a whole observation, not independent maxima of every feature.
+        # Otherwise strength from one KPI, persistence from another and a third
+        # KPI's peer contrast describe a signal that never occurred in the data.
+        parents = sorted(set(existing.features["m4.provenance"] + candidate.features["m4.provenance"]))
+        if _feature_score(candidate.features) > _feature_score(existing.features):
+            existing.features = deepcopy(candidate.features)
+            existing.onset_estimate = candidate.onset_estimate
+            existing.episode_id = candidate.episode_id
+        if existing.onset_interval is not None and candidate.onset_interval is not None:
+            existing.onset_interval = (max(existing.onset_interval[0], candidate.onset_interval[0]),
+                                       min(existing.onset_interval[1], candidate.onset_interval[1]))
+            if existing.onset_estimate is not None:
+                existing.onset_estimate = max(existing.onset_interval[0], min(existing.onset_estimate, existing.onset_interval[1]))
         for attr in ("supporting_ids", "contradicting_ids", "unresolved"):
             setattr(existing, attr, sorted(set(getattr(existing, attr) + getattr(candidate, attr))))
-        existing.features["m4.provenance"] = sorted(set(existing.features["m4.provenance"] + candidate.features["m4.provenance"]))
+        existing.features["m4.provenance"] = parents
         existing.candidate_id = stable_id(case.case_key, "m4.candidate", {
             "parents": existing.features["m4.provenance"], "component": existing.component,
             "reason": existing.reason, "episode_id": existing.episode_id,
-            "onset_interval": existing.onset_interval, "transform": "candidate_fusion.v1"})
+            "onset_interval": existing.onset_interval, "transform": "candidate_fusion.v2"})
     return groups
 
 
@@ -104,22 +115,38 @@ class Ranked:
     contributions: dict
 
 
+def _feature_parts(features):
+    # Unknown mechanism/direction can motivate investigation, but is not
+    # quantitative support for each arbitrary reason in the legal label set.
+    metric_matches_reason = not features.get("m4.weak_reason")
+    metric = (min(10., max(0., _number(features, "metrics.calibrated_strength"))) / 2.
+              if "metrics.calibrated_strength" in features
+              else min(5., max(0., _number(features, "metrics.strength")) / 4.))
+    return {
+        "metric_strength": metric if metric_matches_reason else 0.,
+        "trace_strength": min(3., max(0., _number(features, "traces.anomaly_score"))),
+        "network_strength": min(2., max(0., _number(features, "network.anomaly_score"))),
+        "log_strength": min(1., max(0., _number(features, "logs.anomaly_score"))),
+        # Three consecutive observations already establish sustained behaviour;
+        # a longer background excursion is not inherently more causal.
+        "sustained": min(1., max(0., _number(features, "metrics.persistence_samples") - 1) / 2.) if metric_matches_reason else 0.,
+        "replica_contrast": min(1., max(0., _number(features, "metrics.replica_contrast") - 1.) / 4.) if metric_matches_reason else 0.,
+        "weak_reason": -.25 if features.get("m4.weak_reason") else 0.,
+    }
+
+
+def _feature_score(features):
+    return sum(_feature_parts(features).values())
+
+
 def rank_candidates(case, candidates, evidence):
     evidence_by_id = {e.evidence_id: e for e in evidence}
     result = []
     for candidate in candidates:
         f = candidate.features
         support = [evidence_by_id[i] for i in candidate.supporting_ids if i in evidence_by_id]
-        parts = {
-            "metric_strength": min(5., max(0., _number(f, "metrics.strength")) / 4.),
-            "trace_strength": min(3., max(0., _number(f, "traces.anomaly_score"))),
-            "network_strength": min(2., max(0., _number(f, "network.anomaly_score"))),
-            "log_strength": min(1., max(0., _number(f, "logs.anomaly_score"))),
-            "sustained": min(1., max(0., _number(f, "metrics.persistence_samples") - 1) / 4.),
-            "replica_contrast": min(1., max(0., _number(f, "metrics.replica_contrast")) / 4.),
-            "contradiction": -min(3., len(set(candidate.contradicting_ids))),
-            "weak_reason": -.25 if f.get("m4.weak_reason") else 0.,
-        }
+        parts = _feature_parts(f)
+        parts["contradiction"] = -min(3., len(set(candidate.contradicting_ids)))
         # No source absence penalty: unobserved is not healthy.
         kinds = {e.kind for e in support if any(c.rows_matched > 0 for c in e.coverage)}
         parts["independent_sources"] = .5 * max(0, len(kinds - {"coverage"}) - 1)

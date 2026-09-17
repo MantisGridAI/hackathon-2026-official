@@ -103,6 +103,17 @@ class AuditTests(unittest.TestCase):
         self.assertIsNone(report["total_cost_usd"])
         self.assertIsNone(report["cases"][1]["cost_usd"])
 
+    def test_tool_and_applied_selection_events_are_not_provider_failures(self):
+        events = [self.route, {"event": "tool", "invocation_index": 2, "latency_s": 1.},
+                  {"event": "selection", "invocation_index": 2, "status": "applied"}]
+        self.write_jsonl(self.out / "diagnostics" / "routes.jsonl", events)
+        row = self.audit()["cases"][1]
+        self.assertNotIn("provider_or_model_response", row["error_categories"])
+        self.assertEqual(row["request_attempts"], 1)
+        events[0] = dict(self.route, status="output_truncated")
+        self.write_jsonl(self.out / "diagnostics" / "routes.jsonl", events)
+        self.assertIn("provider_or_model_response", self.audit()["cases"][1]["error_categories"])
+
     def test_missing_case_usage_and_omitted_token_fields_are_unknown(self):
         report = self.audit()
         self.assertFalse(report["pricing_complete"])

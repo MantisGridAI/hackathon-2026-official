@@ -98,8 +98,8 @@ Flash / strong 返回同一结构：
 采用计划中的起始 tiers（具体可用性由调用时验证）：
 
 ```python
-CHEAP = ['zai-org/GLM-4.7-Flash', 'zai-org/GLM-5.3-Flash']
-STRONG = ['zai-org/GLM-5.2', 'zai-org/GLM-5.1']
+CHEAP = ['zai-org/GLM-5.3-Flash', 'zai-org/GLM-4.7-Flash']
+STRONG = ['zai-org/GLM-5.1', 'zai-org/GLM-5.2']
 ```
 
 - 使用 `FEATHERLESS_API_KEY` 和 `FEATHERLESS_BASE_URL`；不为开发测试把 key 写入代码。
@@ -114,7 +114,7 @@ STRONG = ['zai-org/GLM-5.2', 'zai-org/GLM-5.1']
 
 ## 7. 停止、预算与降级
 
-初始工程目标：每题约 45 秒软预算，预留格式化/落盘时间；全运行内部预算可先设 18 分钟、$20，低于官方 20 分钟/$25。这些是待通过性能实验验证的配置目标，非已达成指标，也不替代每题 10 分钟/$3 硬限制。
+当前 `routing.v3` 配置：每题 55 秒软预算，保留 2 秒格式化/落盘余量；全运行内部预算 1140 秒、$20，低于官方 20 分钟/$25。20×55=1100 秒不包含所有外层开销，必须以冷启动端到端实测验收；配置值不是性能指标，也不替代每题 10 分钟/$3 硬限制。模型选项、最小可用请求时间和 workflow 完成状态见 [INTERFACES](../INTERFACES.md#6-runstate配置与模型记账)。
 
 停止条件：
 

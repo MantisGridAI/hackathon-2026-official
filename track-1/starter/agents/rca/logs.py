@@ -5,6 +5,8 @@ from collections import Counter, OrderedDict
 from copy import deepcopy
 import weakref
 
+import pandas as pd
+
 from .contracts import (AnalysisBundle, Candidate, CaseContext, EvidenceRecord,
                         QuerySpec, TelemetryStore, stable_id)
 from .network import number, text
@@ -13,6 +15,7 @@ from .traces import _evidence, _read_queries
 
 LOG_COLUMNS = ("log_id", "timestamp", "cmdb_id", "log_name", "value")
 MAX_LOG_ROWS = 50_000
+LOG_MEMORY_BYTES = 128 * 1024 * 1024
 MAX_MATCH_SAMPLES = 8
 MAX_TEXT_LENGTH = 2000
 # Bounded tool-result cache, keyed by the actual Store instance and all inputs.
@@ -22,31 +25,31 @@ _RESULT_CACHE = weakref.WeakKeyDictionary()
 
 def _log_values(frame, patterns, component=None):
     selected = frame if component is None else frame[frame["_component_id"].map(text) == component]
-    rows = selected.to_dict("records")
-    matched = []
+    selected = selected.reset_index(drop=True)
+    folded = selected["value"].fillna("").astype(str).str.casefold()
+    pattern_masks = {pattern: folded.str.contains(pattern, regex=False) for pattern in patterns}
+    matched = pd.Series(False, index=selected.index)
     pattern_counts = Counter()
+    for pattern, mask in pattern_masks.items():
+        pattern_counts[pattern] = int(mask.sum())
+        matched |= mask
     sample_rows = []
-    for index, row in enumerate(rows):
-        raw = text(row.get("value"))
-        found = [pattern for pattern in patterns if pattern in raw.casefold()]
-        if not found:
-            continue
-        matched.append(index)
-        pattern_counts.update(found)
-        if len(sample_rows) < MAX_MATCH_SAMPLES:
-            # Context stays in the same component stream and retains record IDs.
-            nearby = []
-            for other_index in (index - 1, index + 1):
-                if 0 <= other_index < len(rows):
-                    other = rows[other_index]
-                    if text(other.get("_component_id")) == text(row.get("_component_id")):
-                        nearby.append(_positioned_text(other))
-            sample = _positioned_text(row)
-            sample["matched_patterns"] = found
-            sample["context"] = nearby
-            sample_rows.append(sample)
+    for index in selected.index[matched][:MAX_MATCH_SAMPLES]:
+        row = selected.iloc[index]
+        found = [pattern for pattern, mask in pattern_masks.items() if mask.iloc[index]]
+        # Context stays in the same component stream and retains record IDs.
+        nearby = []
+        for other_index in (index - 1, index + 1):
+            if 0 <= other_index < len(selected):
+                other = selected.iloc[other_index]
+                if text(other.get("_component_id")) == text(row.get("_component_id")):
+                    nearby.append(_positioned_text(other))
+        sample = _positioned_text(row)
+        sample["matched_patterns"] = found
+        sample["context"] = nearby
+        sample_rows.append(sample)
     return {
-        "searched_rows": len(rows), "matched_rows": len(matched),
+        "searched_rows": len(selected), "matched_rows": int(matched.sum()),
         "pattern_match_counts": {pattern: pattern_counts[pattern] for pattern in patterns},
         "match_samples": sample_rows,
         "sample_limit": MAX_MATCH_SAMPLES,
@@ -86,23 +89,26 @@ def search_fault_evidence(case: CaseContext, component_ids: tuple[str, ...],
     bundle = AnalysisBundle(module="m3")
     for source in ordered_sources:
         query = QuerySpec(source, case.start, case.end, LOG_COLUMNS, component_ids=components)
-        frame, coverage, warnings, retained = _read_queries([query], store, deadline, [MAX_LOG_ROWS])
+        frame, coverage, warnings, retained = _read_queries([query], store, deadline,
+                                                          memory_limit_bytes=LOG_MEMORY_BYTES)
         bundle.coverage.extend(coverage)
         bundle.warnings.extend(warnings)
         observed_components = sorted(set(frame["_component_id"].map(text)) - {""})
         # A summary explicitly represents an empty search or missing source.
         for component in observed_components or [None]:
             params = {"patterns": list(normalized), "component": component,
-                      "retained_rows_per_query": retained, "row_cap_per_query": MAX_LOG_ROWS,
+                      "retained_rows_per_query": retained, "memory_limit_bytes": LOG_MEMORY_BYTES,
                       "matching": "casefold-literal-substring.v1", "max_match_samples": MAX_MATCH_SAMPLES,
                       "max_text_characters": MAX_TEXT_LENGTH, "context_records_each_side": 1}
             values = _log_values(frame, normalized, component)
-            rows = frame.to_dict("records") if component is None else frame[frame["_component_id"].map(text) == component].to_dict("records")
+            rows = frame if component is None else frame[frame["_component_id"].map(text) == component]
             # Location samples prioritize actual matches, then the scanned prefix.
-            matches = [row for row in rows if any(pattern in text(row.get("value")).casefold() for pattern in normalized)]
-            record = _evidence(case, "logs.literal_search.v1", params, values,
+            locations = {(sample["source_file"], sample["record_index"]) for sample in values["match_samples"]}
+            matched = pd.MultiIndex.from_frame(rows[["_source_file", "_record_index"]]).isin(locations)
+            samples = rows[matched].head(MAX_MATCH_SAMPLES) if locations else rows.head(MAX_MATCH_SAMPLES)
+            record = _evidence(case, "logs.literal_search.v2", params, values,
                                [component] if component else list(components), [query], coverage,
-                               matches[:MAX_MATCH_SAMPLES] or rows[:MAX_MATCH_SAMPLES],
+                               samples,
                                {"searched_rows": "count", "matched_rows": "count", "timestamp_s": "epoch seconds"},
                                warnings + [
                                    "Literal keywords can be propagated symptoms or benign text; a match does not establish root cause.",
@@ -110,7 +116,7 @@ def search_fault_evidence(case: CaseContext, component_ids: tuple[str, ...],
                                    "Context follows source record order, which need not be chronological; text may be explicitly truncated.",
                                ], kind="log")
             record.interval = (case.start, case.end)
-            record.source_files = sorted({text(row.get("_source_file")) for row in rows} - {""})
+            record.source_files = sorted(set(rows["_source_file"].dropna().astype(str)) - {""})
             bundle.evidence.append(record)
             if component and values["matched_rows"]:
                 bundle.candidates.append(Candidate(
@@ -128,10 +134,11 @@ def search_fault_evidence(case: CaseContext, component_ids: tuple[str, ...],
 
 
 def _replay_log_evidence(record: EvidenceRecord, store: TelemetryStore, *, deadline: float) -> dict:
-    if record.transform != "logs.literal_search.v1":
+    if record.transform not in ("logs.literal_search.v1", "logs.literal_search.v2"):
         raise ValueError(f"Unsupported log transform: {record.transform}")
     params = record.transform_params
-    frame, _, _, retained = _read_queries(record.queries, store, deadline, params["retained_rows_per_query"])
+    frame, _, _, retained = _read_queries(record.queries, store, deadline, params["retained_rows_per_query"],
+        memory_limit_bytes=params.get("memory_limit_bytes", LOG_MEMORY_BYTES) if record.transform.endswith(".v2") else None)
     if retained != params["retained_rows_per_query"]:
         raise TimeoutError("Log replay did not recover recorded input prefix")
     return _log_values(frame, tuple(params["patterns"]), params["component"])

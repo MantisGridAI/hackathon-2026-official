@@ -1,0 +1,143 @@
+{
+  "scope": "Public development workflow verification, not held-out test",
+  "planned_row_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    14,
+    20,
+    27,
+    34,
+    41,
+    48,
+    53,
+    60,
+    65,
+    69
+  ],
+  "planned": 20,
+  "returned": 20,
+  "workflow_complete": 19,
+  "coverage_complete": 17,
+  "model_selections_retained": 20,
+  "interruptions": [
+    {
+      "invocation": 18,
+      "workflow": {
+        "complete": false,
+        "interruptions": [
+          "planned_escalation_unfinished"
+        ],
+        "model_selection_applied": true,
+        "telemetry_coverage_complete": true,
+        "validation_status": "valid"
+      }
+    }
+  ],
+  "request_statuses": {
+    "valid": 36,
+    "wall_deadline_exceeded": 3,
+    "empty_content": 2
+  },
+  "model_request_counts": {
+    "zai-org/GLM-5.3-Flash": 20,
+    "zai-org/GLM-5.1": 19,
+    "zai-org/GLM-4.7-Flash": 2
+  },
+  "finish_reasons": {
+    "stop": 38,
+    "null": 3
+  },
+  "stop_reasons": {
+    "strong_selection": 18,
+    "flash_selection": 2
+  },
+  "validation_statuses": {
+    "degraded": 6,
+    "valid": 14
+  },
+  "followup_tools": {
+    "compare_replicas_and_node": 20
+  },
+  "requested_field_sets": {
+    "reason": 3,
+    "component": 2,
+    "component,reason": 5,
+    "datetime": 5,
+    "datetime,reason": 2,
+    "datetime,component": 2,
+    "datetime,component,reason": 1
+  },
+  "failure_counts": {
+    "2": 8,
+    "1": 12
+  },
+  "mean_partial": 0.346,
+  "fully_solved": 5,
+  "first_ten_mean_partial": 0.25,
+  "integrity_status": "valid",
+  "integrity_errors": [],
+  "evidence_four_section_fraction": 1.0,
+  "known_cost_usd": 0.11387295500000001,
+  "total_cost_usd": null,
+  "unknown_cost_requests": 3,
+  "retained_unknown_reservations_usd": 0.030670799999999998,
+  "max_prompt_bytes": 15989,
+  "max_completion_tokens": 262,
+  "tool_timing_s": {
+    "triage_metrics": {
+      "count": 20,
+      "mean": 3.5088685,
+      "maximum": 3.755713
+    },
+    "triage_traces": {
+      "count": 20,
+      "mean": 10.5307844,
+      "maximum": 11.604084
+    },
+    "compare_replicas_and_node": {
+      "count": 20,
+      "mean": 1.2531309,
+      "maximum": 2.759972
+    }
+  },
+  "case_time_stats": {
+    "count": 20,
+    "mean": 30.422,
+    "median": 27.315,
+    "p95": 44.79,
+    "max": 47.63
+  },
+  "resources": {
+    "argv": [
+      "python",
+      "run.py",
+      "--dataset",
+      "/data",
+      "--queries",
+      "/out/queries.csv",
+      "--out",
+      "/out"
+    ],
+    "wall_s": 608.9598335600001,
+    "returncode": 0,
+    "timed_out": false,
+    "peak_child_rss_bytes": 494301184,
+    "cpu_max": "200000 100000",
+    "memory_max": "8589934592",
+    "memory_peak": "2195165184"
+  },
+  "runtime_source_mismatches": [],
+  "limitations": [
+    "Single public-development run, not a held-out test or matched routing comparison.",
+    "Workflow/evidence-format validity does not establish answer accuracy or causal support.",
+    "Reported costs use provider token usage and the project price table, not account billing."
+  ]
+}

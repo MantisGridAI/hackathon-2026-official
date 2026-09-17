@@ -16,6 +16,34 @@ from agents.rca.routing import load_config, snapshot_usage, usage_delta
 from agents.rca.runtime import get_run_state, parse_case
 
 
+def _workflow_status(decision, validation_status):
+    """Execution completeness is not output validity, accuracy or high confidence."""
+    events = decision.route_events
+    tools = [event for event in events if event.get('event') == 'tool']
+    interruptions = ['tool:' + event['tool'] for event in tools if event.get('status') != 'complete']
+    for name in ('triage_metrics', 'triage_traces'):
+        if not any(event.get('tool') == name for event in tools):
+            interruptions.append('missing_tool:' + name)
+    if any(event.get('reason') == 'insufficient_followup_time' for event in events):
+        interruptions.append('followup_time_budget')
+    model_applied = decision.stop_reason in ('flash_selection', 'strong_selection') and any(event.get('selection_applied') for event in events)
+    model_required = decision.stop_reason not in ('deterministic_mode', 'deterministic_gate')
+    if model_required and not model_applied:
+        interruptions.append('model_selection_unavailable')
+    if any(event.get('event') == 'escalation' for event in events) and not any(
+            event.get('selection_applied') and event.get('stage') == 'strong' for event in events):
+        interruptions.append('planned_escalation_unfinished')
+    if validation_status not in ('valid', 'degraded'):
+        interruptions.append('render:' + validation_status)
+    if any(event.get('event') == 'render_fallback' for event in events):
+        interruptions.append('preferred_decision_rejected')
+    coverages = [coverage for event in tools for coverage in event.get('coverage', [])]
+    return dict(complete=not interruptions, interruptions=interruptions,
+                model_selection_applied=model_applied,
+                telemetry_coverage_complete=bool(coverages) and all(c['status'] == 'complete' for c in coverages),
+                validation_status=validation_status)
+
+
 def _save_diagnostic(case, decision, evidence, catalog, state, validation_status):
     """Atomic, inspectable full ledger; raw model messages/credentials are absent."""
     root = Path(state.out_dir).resolve()
@@ -33,7 +61,8 @@ def _save_diagnostic(case, decision, evidence, catalog, state, validation_status
                # replay/semantic validation without changing the shared catalog.
                "catalog": {"components": {key: asdict(value) for key, value in catalog.components.items()},
                            "coverage": [asdict(value) for value in catalog.coverage]},
-               "validation_status": validation_status}
+               "validation_status": validation_status,
+               "workflow": _workflow_status(decision, validation_status)}
     def encode(value):
         if isinstance(value, datetime):
             return value.isoformat()
@@ -109,6 +138,7 @@ def solve(instruction: str, dataset_dir: Path, ctx: dict) -> Solution:
                                        state.store.component_catalog())
         if rendered.validation_status == "invalid":
             fallback.limitations.extend(["Preferred decision rejected by output validation"] + rendered.errors)
+            fallback.route_events.append(dict(event='render_fallback', status='applied', reason='preferred_decision_invalid'))
             chosen = fallback
             rendered = validate_and_render(case, fallback, result.evidence,
                                            state.store.component_catalog())
