@@ -40,6 +40,10 @@ class ParserTests(unittest.TestCase):
                 parse_case(text)
         self.assertEqual(parse_case("March 20, 2022 09:00 to 09:30").parse_status, "degraded")
 
+    def test_paraphrased_request_clause(self):
+        case = parse_case("A failure March 20, 2022 from 09:00 to 09:30. You need to identify and determine the root cause occurrence time and the reason behind the failure.")
+        self.assertEqual(case.requested_fields, ("datetime", "reason"))
+
     def test_labels_match_official_docs(self):
         official = (Path(__file__).resolve().parents[3] / "docs/data.md").read_text(encoding="utf-8")
         self.assertEqual(len(LEGAL_REASONS), 15)

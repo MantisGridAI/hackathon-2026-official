@@ -60,7 +60,7 @@ def parse_case(instruction: str, *, reference_minutes: int = 10) -> CaseContext:
     if not count:
         warnings.append("Failure count not explicit; best guess is one")
     # Requested output is stated in the task clause. Window times are not requested fields.
-    task = re.split(r"you are tasked with|your task is|please identify|identify(?:ing)?\s+(?:the\s+)?root cause", instruction, flags=re.I)[-1]
+    task = re.split(r"you are tasked with|you need to|your task is|please identify|identify(?:ing)?\s+(?:the\s+)?root cause", instruction, flags=re.I)[-1]
     task = task.lower()
     requested = tuple(f for f, pattern in (("datetime", r"datetime|occurrence\s+time|\btime\b|timestamp|when"),
                       ("component", r"component"), ("reason", r"reason|underlying cause")) if re.search(pattern, task))

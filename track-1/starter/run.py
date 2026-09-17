@@ -29,6 +29,9 @@ from pathlib import Path
 
 import pandas as pd
 
+# Include interpreter/import overhead conservatively in the shared run budget.
+RUN_STARTED_MONOTONIC = time.monotonic() - 1.0
+
 
 @dataclass
 class Solution:
@@ -107,7 +110,8 @@ def main() -> None:
         print(f"resuming: {len(done)} case(s) already done")
 
     agent = importlib.import_module(args.agent)
-    ctx = {"dataset_dir": dataset, "out_dir": out}
+    ctx = {"dataset_dir": dataset, "out_dir": out,
+           "started_monotonic": RUN_STARTED_MONOTONIC}
 
     for r in queries.itertuples(index=False):
         rid = int(r.row_id)
@@ -123,13 +127,13 @@ def main() -> None:
                            + traceback.format_exc() + "```")
         wall = time.time() - t0
 
-        (out / "evidence" / f"{rid}.md").write_text(sol.evidence or "_no evidence_\n")
+        (out / "evidence" / f"{rid}.md").write_text(sol.evidence or "_no evidence_\n", encoding="utf-8")
         models = per_model(sol.usage or {})
         rec = {"row_id": rid, "prediction": sol.prediction,
                "task_index": getattr(r, "task_index", ""), "wall_s": round(wall, 2),
                **{k: sum(m.get(k, 0) for m in models.values()) for k in COUNTS}}
         rows.append(rec)
-        with (out / "usage.jsonl").open("a") as fh:
+        with (out / "usage.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({k: v for k, v in rec.items() if k != "prediction"}
                                 | {"models": models}) + "\n")
         # Written after every case: a run that stops at case 60 keeps the first 59.
