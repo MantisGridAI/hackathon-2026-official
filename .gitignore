@@ -27,3 +27,4 @@ data/
 processed/
 .pytest_cache/
 .ruff_cache/
+.worktrees/
