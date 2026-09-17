@@ -12,7 +12,7 @@ component, a compatible reason hypothesis, its sampled onset, low confidence, an
 an empty per-model usage dictionary. These fixture records are synthetic and are
 not presented as real experiment evidence.
 
-Actual checks on Windows, Python 3.11 bundled runtime:
+Actual checks on Windows, Python 3.12.14 bundled runtime:
 
 ```
 python -m unittest discover -s tests/m4 -p 'test_*.py' -v
