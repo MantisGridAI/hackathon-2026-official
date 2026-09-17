@@ -6,6 +6,9 @@ one bounded controller. `solve(instruction, dataset_dir, ctx)` returns the offic
 fallback, and the full merged evidence ledger. Public development labels are never
 read by these runtime modules or tests.
 
+The subsequent bounded HTTP-worker and prompt repair, loopback checks, and actual
+ledger size replay are recorded in [TRANSPORT_CHECK.md](TRANSPORT_CHECK.md).
+
 For example, the synthetic fixture in `helpers.py` supplies a CPU anomaly for
 `synthetic-pod`. Deterministic investigation returns one answer for that observed
 component, a compatible reason hypothesis, its sampled onset, low confidence, and
@@ -16,7 +19,7 @@ Actual checks on Windows, Python 3.12.14 bundled runtime:
 
 ```
 python -m unittest discover -s tests/m4 -p 'test_*.py' -v
-# 38 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
+# 48 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
 
 RCA_TEST_DATA=<official Market-cloudbed-1 directory>
 python -m unittest discover -s tests/m4 -p test_real_window.py -v

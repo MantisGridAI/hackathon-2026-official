@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from agents.rca.contracts import RunConfig
+from agents.rca.prompts import MAX_PROMPT_BYTES, prompt_bytes
 from cost import PRICES
 from llm import LLM
 
@@ -92,6 +93,9 @@ class Router:
         if cfg.mode == "deterministic":
             self.bypass("deterministic_mode", stage)
             return None
+        if prompt_bytes(messages) > MAX_PROMPT_BYTES:
+            self.bypass("prompt_size_limit", stage)
+            return None
         tier = CHEAP if stage == "flash" else STRONG
         models = (cfg.pinned_model,) if cfg.pinned_model else tier
         requested_model = models[0]
@@ -117,6 +121,11 @@ class Router:
                 except Exception as exc:
                     self.bypass("client_unavailable:" + type(exc).__name__, stage)
                     return None
+            # Initialization and serialization consume the same absolute budget.
+            remaining = self.deadline - time.monotonic() - RENDER_RESERVE_S
+            if remaining <= .05:
+                self.bypass("deadline_exhausted", stage)
+                return None
             self.attempts += 1
             self.state.estimated_cost_usd += reserve
             started = time.monotonic()
@@ -129,20 +138,23 @@ class Router:
             # Preserve provider identity even on a policy violation. Charging an
             # unexpected model to the requested GLM would fabricate attribution.
             accounted_model = actual
-            usage = self.state.usage_ledger.setdefault(accounted_model, dict(
-                calls=0, prompt_tokens=0, completion_tokens=0, unknown_usage_calls=0))
-            usage["calls"] += 1
-            for field in ("prompt_tokens", "completion_tokens"):
-                value = getattr(result, field)
-                if value is not None:
-                    usage[field] += value
+            request_started = getattr(result, "request_started", True)
+            usage = None
+            if request_started:
+                usage = self.state.usage_ledger.setdefault(accounted_model, dict(
+                    calls=0, prompt_tokens=0, completion_tokens=0, unknown_usage_calls=0))
+                usage["calls"] += 1
+                for field in ("prompt_tokens", "completion_tokens"):
+                    value = getattr(result, field)
+                    if value is not None:
+                        usage[field] += value
             known_usage = result.prompt_tokens is not None and result.completion_tokens is not None
             if known_usage and actual in PRICES:
                 p_in, p_out = PRICES[accounted_model]
                 cost = (result.prompt_tokens * p_in + result.completion_tokens * p_out) / 1e6
                 self.state.estimated_cost_usd += cost - reserve
             else:
-                if not known_usage:
+                if not known_usage and usage is not None:
                     usage["unknown_usage_calls"] = usage.get("unknown_usage_calls", 0) + 1
                 cost = None
             unknown_cost = cost is None
@@ -156,12 +168,13 @@ class Router:
                     status = "valid"
                 except (ValueError, TypeError, KeyError, json.JSONDecodeError):
                     status = "invalid_response"
-            if status != "valid":
+            if status != "valid" and request_started:
                 self.state.model_health[model] = self.state.model_health.get(model, 0) + 1
-            else:
+            elif status == "valid":
                 self.state.model_health[model] = 0
-            self._record(dict(event="request", stage=stage, requested_model=requested_model,
-                              attempt_model=model, actual_model=actual, reason=reason,
+            self._record(dict(event="request" if request_started else "bypass", stage=stage, requested_model=requested_model,
+                              attempt_model=model, actual_model=actual,
+                              reason=reason if request_started else "client_unavailable:" + str(status),
                               fallback=index > 0, status=status, latency_s=round(duration, 6),
                               prompt_tokens=result.prompt_tokens,
                               completion_tokens=result.completion_tokens,

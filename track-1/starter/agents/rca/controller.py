@@ -18,6 +18,7 @@ def _bypass_limitations(events):
         "http_attempt_limit": "the maximum number of HTTP attempts was reached",
         "cost_reservation_limit": "the next request could not fit within the remaining cost budget",
         "model_stage_limit": "the configured model stage limit was reached",
+        "prompt_size_limit": "the prompt exceeded the fixed byte budget",
     }
     notes = []
     for event in events:
