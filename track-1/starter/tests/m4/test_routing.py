@@ -1,0 +1,137 @@
+import json
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import time
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+from helpers import case, response, state, Transport
+from agents.rca.routing import CHEAP, STRONG, Router, load_config, snapshot_usage, usage_delta
+from llm import LLM
+
+
+class TransportTests(unittest.TestCase):
+    def wrapper(self, raw):
+        return LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+            create=lambda **kwargs: raw))))
+
+    def test_error_body_wins_even_if_choices_present(self):
+        result = self.wrapper({"error": {"message": "secret never logged"}, "choices": [{}],
+                               "usage": {"prompt_tokens": 9, "completion_tokens": 2}}).request(
+                               CHEAP[0], [], timeout=1)
+        self.assertEqual(result.error, "provider_error_body")
+        self.assertEqual(result.prompt_tokens, 9)
+
+    def test_empty_choices_and_content(self):
+        for raw in ({}, {"choices": []}, {"choices": [{"message": {"content": ""}}]}):
+            self.assertIsNotNone(self.wrapper(raw).request(CHEAP[0], [], timeout=1).error)
+
+    def test_missing_usage_remains_unknown(self):
+        result = self.wrapper({"choices": [{"message": {"content": "<think>hidden</think>{}"}}]}).request(CHEAP[0], [], timeout=1)
+        self.assertEqual(result.text, "{}")
+        self.assertIsNone(result.prompt_tokens)
+
+    def test_transport_error_redacts_message(self):
+        def failure(**kwargs):
+            raise RuntimeError("Bearer secret-token")
+        llm = LLM(client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=failure))))
+        self.assertEqual(llm.request(CHEAP[0], [], timeout=1).error, "transport_RuntimeError")
+
+    def test_only_allowed_models(self):
+        with self.assertRaises(ValueError):
+            self.wrapper({}).request("other/provider", [], timeout=1)
+
+
+class RouterTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.state = state(self.tmp.name)
+
+    def router(self, deadline=None):
+        return Router(case(), self.state, deadline=deadline or time.monotonic() + 30)
+
+    def test_bad_json_fallback_and_usage(self):
+        self.state.client = Transport([lambda m: response(m, "not json"), lambda m: response(m, '{"ok":true}')])
+        before = snapshot_usage(self.state)
+        router = self.router()
+        result = router.request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(result, {"ok": True})
+        self.assertTrue(router.events[-1]["fallback"])
+        self.assertEqual(router.events[0]["status"], "invalid_response")
+        self.assertEqual(sum(v["calls"] for v in usage_delta(self.state, before).values()), 2)
+        self.assertEqual(sum(v["prompt_tokens"] for v in self.state.usage_ledger.values()), 40)
+
+    def test_unknown_usage_retains_reservation(self):
+        self.state.client = Transport([lambda m: response(m, "{}", None, None)])
+        router = self.router()
+        router.request("flash", [], reason="test", validate=json.loads)
+        self.assertGreater(self.state.estimated_cost_usd, 0)
+        self.assertIsNone(router.events[-1]["estimated_cost_usd"])
+        self.assertIsNone(router.events[-1]["prompt_tokens"])
+        self.assertEqual(self.state.usage_ledger[CHEAP[0]]["unknown_usage_calls"], 1)
+
+    def test_budget_rejects_before_call(self):
+        self.state.config.run_cost_limit_usd = 0
+        self.state.client = Transport([])
+        self.router().request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(self.state.client.calls, [])
+
+    def test_deadline_rejects_before_call(self):
+        self.state.client = Transport([])
+        self.router(time.monotonic() - 1).request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(self.state.client.calls, [])
+
+    def test_single_model_disables_fallback(self):
+        self.state.config.pinned_model = STRONG[0]
+        self.state.client = Transport([lambda m: response(m, error="provider_error_body")])
+        self.assertIsNone(self.router().request("flash", [], reason="test", validate=json.loads))
+        self.assertEqual([m for m, _ in self.state.client.calls], [STRONG[0]])
+
+    def test_shared_circuit_breaker_across_cases(self):
+        self.state.config.pinned_model = CHEAP[0]
+        self.state.client = Transport([lambda m: response(m, error="empty_choices")] * 2)
+        for _ in range(3):
+            self.router().request("flash", [], reason="test", validate=json.loads)
+            self.state.invocation_index += 1
+        self.assertEqual(len(self.state.client.calls), 2)
+
+    def test_total_http_limit_counts_failures(self):
+        self.state.config.max_http_attempts_per_case = 1
+        self.state.client = Transport([lambda m: response(m, error="empty_choices")])
+        router = self.router()
+        router.request("flash", [], reason="test", validate=json.loads)
+        router.request("strong", [], reason="test", validate=json.loads)
+        self.assertEqual(len(self.state.client.calls), 1)
+
+    def test_per_case_usage_is_delta(self):
+        self.state.client = Transport([lambda m: response(m)] * 2)
+        self.router().request("flash", [], reason="test", validate=json.loads)
+        before = snapshot_usage(self.state)
+        self.router().request("flash", [], reason="test", validate=json.loads)
+        self.assertEqual(usage_delta(self.state, before)[CHEAP[0]]["calls"], 1)
+        self.assertEqual(usage_delta(self.state, before)[CHEAP[0]]["prompt_tokens"], 20)
+
+    def test_deterministic_no_client_or_credentials(self):
+        self.state.config.mode = "deterministic"
+        with patch("agents.rca.routing.LLM", side_effect=AssertionError("client must not initialize")):
+            self.router().request("flash", [], reason="test", validate=json.loads)
+        self.assertIsNone(self.state.client)
+        self.assertEqual(self.state.usage_ledger, {})
+
+    def test_config_rejects_non_glm(self):
+        with patch.dict(os.environ, {"RCA_MODEL": "invalid/model"}):
+            with self.assertRaises(ValueError):
+                load_config()
+
+    def test_routes_are_json_lines_in_out(self):
+        self.router().bypass("synthetic_test")
+        row = json.loads((Path(self.tmp.name) / "diagnostics/routes.jsonl").read_text())
+        self.assertEqual(row["case_key"], "synthetic-case")
+        self.assertEqual(row["event"], "bypass")
+
+
+if __name__ == "__main__":
+    unittest.main()
