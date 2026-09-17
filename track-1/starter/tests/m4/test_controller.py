@@ -1,5 +1,6 @@
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
@@ -9,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from tests.m4.helpers import bundle, candidate, case, evidence, response, state, Transport
 from agents.rca.contracts import AnalysisBundle, InvestigationResult, RenderedResult
-from agents.rca.controller import investigate
+from agents.rca.controller import _bypass_limitations, investigate
 from agents.rca.ranking import make_decision
 from agents.rca.routing import CHEAP
 
@@ -51,6 +52,30 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(len(self.state.client.calls), 4)
         self.assertEqual(sum(v["calls"] for v in result.fallback.usage_delta.values()), 4)
         self.assertEqual(len([e for e in result.decision.route_events if e["event"] == "request"]), 4)
+
+    def test_missing_key_bypass_is_explained_in_both_decisions(self):
+        self.state.config.mode = "routed"
+        with patch.dict(os.environ, {"FEATHERLESS_API_KEY": ""}):
+            result = self.run_case()
+        for decision in (result.decision, result.fallback):
+            notes = [note for note in decision.limitations if "model client initialization was unavailable" in note]
+            self.assertEqual(len(notes), 1, "Repeated stage bypasses should have one concise explanation")
+            self.assertIn("no request was sent", notes[0])
+            self.assertEqual(decision.usage_delta, {})
+        self.assertIsNone(self.state.client)
+
+    def test_operational_bypass_notes_are_bounded_and_exclude_deliberate_routes(self):
+        reasons = ["deterministic_mode", "deterministic_gate", "no_new_mechanism_evidence",
+                   "deadline_exhausted", "http_attempt_limit", "cost_reservation_limit",
+                   "model_stage_limit", "circuit_open:zai-org/GLM-5.2"]
+        notes = _bypass_limitations([dict(event="bypass", reason=reason) for reason in reasons])
+        self.assertEqual(len(notes), 5)
+        self.assertTrue(any("circuit breaker" in note for note in notes))
+        self.assertTrue(any("cost budget" in note for note in notes))
+        self.assertTrue(any("HTTP attempts" in note for note in notes))
+        self.assertTrue(any("deadline" in note for note in notes))
+        many = [dict(event="bypass", reason=f"circuit_open:synthetic-{i}") for i in range(30)]
+        self.assertEqual(len(_bypass_limitations(many)), 8)
 
     def test_model_choice_has_no_authority_to_create_facts(self):
         self.state.config.mode = "routed"

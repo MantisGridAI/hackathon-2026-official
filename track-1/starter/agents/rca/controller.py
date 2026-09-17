@@ -11,6 +11,34 @@ from .ranking import (choose_candidates, deterministic_gate, make_decision,
 from .routing import Router, RENDER_RESERVE_S, snapshot_usage, usage_delta
 
 
+def _bypass_limitations(events):
+    """Expose operational route failures in human evidence, with bounded detail."""
+    descriptions = {
+        "deadline_exhausted": "the remaining model deadline was exhausted",
+        "http_attempt_limit": "the maximum number of HTTP attempts was reached",
+        "cost_reservation_limit": "the next request could not fit within the remaining cost budget",
+        "model_stage_limit": "the configured model stage limit was reached",
+    }
+    notes = []
+    for event in events:
+        if event.get("event") != "bypass":
+            continue
+        reason = str(event.get("reason", ""))
+        if reason.startswith("client_unavailable:"):
+            description = "model client initialization was unavailable (" + reason.split(":", 1)[1][:80] + ")"
+        elif reason.startswith("circuit_open:"):
+            description = "the model circuit breaker was open for " + reason.split(":", 1)[1][:80]
+        else:
+            description = descriptions.get(reason)
+        if description:
+            note = "Model routing bypassed because " + description + "; no request was sent for this bypass."
+            if note not in notes:
+                notes.append(note)
+            if len(notes) >= 8:
+                break
+    return notes
+
+
 def _call(module, function, *args, deadline):
     if time.monotonic() >= deadline:
         return AnalysisBundle(module, warnings=[f"{module}: skipped because telemetry deadline was exhausted"])
@@ -102,6 +130,7 @@ def investigate(case, state, *, deadline: float) -> InvestigationResult:
     for result in (decision, fallback):
         result.route_events = deepcopy(router.events)
         result.usage_delta = usage_delta(state, before)
+        result.limitations.extend(_bypass_limitations(router.events))
         failed = [e for e in router.events if e["event"] == "request" and e["status"] != "valid"]
         if failed:
             result.limitations.append(f"{len(failed)} model attempt(s) failed response or transport validation; retained best guess")
