@@ -1,0 +1,111 @@
+{
+  "recommendation": {
+    "id": "rec_drain_nodes",
+    "title": "Drain the top 5 underperforming nodes",
+    "action": "These nodes carry the highest finding counts in the fleet. Drain and submit for hardware inspection.",
+    "claimed_savings_usd": 57225.93,
+    "claimed_savings_gpu_hours": 22890.4,
+    "confidence": 0.58,
+    "effort": "low",
+    "kind": "judgment",
+    "n_cited_findings": 20
+  },
+  "cited_finding_causal_types": {
+    "no_causal_chain": 15,
+    "k8s:namespace": 5
+  },
+  "cited_findings_not_resolving_to_node": 5,
+  "per_node": [
+    {
+      "node": "r4605940-n772143",
+      "findings": 259,
+      "hardware_fault": 0,
+      "node_failures": 0,
+      "array_task_findings": 209,
+      "delivered_gpu_hours": 2468.0,
+      "failed_jobs": 286,
+      "distinct_users_failing": 32,
+      "top_user_share_of_failures": 0.381,
+      "causal_types": {
+        "no_chain": 23,
+        "k8s:namespace": 1,
+        "k8s:persistentvolumeclaim": 1
+      },
+      "drain_justified": false
+    },
+    {
+      "node": "r7317916-n772143",
+      "findings": 164,
+      "hardware_fault": 0,
+      "node_failures": 0,
+      "array_task_findings": 134,
+      "delivered_gpu_hours": 2276.7,
+      "failed_jobs": 217,
+      "distinct_users_failing": 32,
+      "top_user_share_of_failures": 0.249,
+      "causal_types": {
+        "no_chain": 23,
+        "k8s:namespace": 1,
+        "k8s:persistentvolumeclaim": 1
+      },
+      "drain_justified": false
+    },
+    {
+      "node": "r3974592-n172107",
+      "findings": 162,
+      "hardware_fault": 0,
+      "node_failures": 0,
+      "array_task_findings": 122,
+      "delivered_gpu_hours": 3441.1,
+      "failed_jobs": 177,
+      "distinct_users_failing": 25,
+      "top_user_share_of_failures": 0.565,
+      "causal_types": {
+        "no_chain": 23,
+        "k8s:namespace": 1,
+        "k8s:persistentvolumeclaim": 1
+      },
+      "drain_justified": false
+    },
+    {
+      "node": "r4144777-n172107",
+      "findings": 154,
+      "hardware_fault": 0,
+      "node_failures": 0,
+      "array_task_findings": 104,
+      "delivered_gpu_hours": 3623.4,
+      "failed_jobs": 202,
+      "distinct_users_failing": 22,
+      "top_user_share_of_failures": 0.45,
+      "causal_types": {
+        "no_chain": 23,
+        "k8s:namespace": 1,
+        "k8s:persistentvolumeclaim": 1
+      },
+      "drain_justified": false
+    },
+    {
+      "node": "r7317916-n303509",
+      "findings": 136,
+      "hardware_fault": 0,
+      "node_failures": 0,
+      "array_task_findings": 95,
+      "delivered_gpu_hours": 3491.8,
+      "failed_jobs": 196,
+      "distinct_users_failing": 26,
+      "top_user_share_of_failures": 0.49,
+      "causal_types": {
+        "no_chain": 24,
+        "k8s:namespace": 1
+      },
+      "drain_justified": false
+    }
+  ],
+  "nodes_recommended": 5,
+  "nodes_with_hardware_evidence": 0,
+  "nodes_without_hardware_evidence": 5,
+  "capacity_at_risk_gpu_hours": 15301.0,
+  "capacity_at_risk_usd": 38252.5,
+  "destroy_to_recover_ratio": 0.67,
+  "price_per_gpu_hour": 2.5
+}

@@ -13,3 +13,6 @@ __pycache__/
 .DS_Store
 claims.json
 out/
+data/
+track-2/track-2-raw.zip
+track-2/FIELD_REFERENCE.md
