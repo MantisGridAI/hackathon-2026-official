@@ -108,6 +108,11 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(frame.duration.iloc[0], 900)
         self.assertEqual(frame.span_id.iloc[0], "0001")
 
+    def test_pod_name_beginning_with_node_is_not_a_node(self):
+        self.write("trace_span", [[BASE.timestamp()*1000, "node-service-0", "s", "t", 5, "rpc", "0", "Get", ""]])
+        self.read(self.query("trace_span"))
+        self.assertEqual(self.store.component_catalog().components["node-service-0"].kind, "container")
+
     def test_csv_commas_multiline_and_empty_filters(self):
         self.write("log_service", [["1", BASE.timestamp(), "api-1", "log", "hello, world\nsecond line"],
             ["2", BASE.timestamp() + 1, "api-2", "log", "OK"]])

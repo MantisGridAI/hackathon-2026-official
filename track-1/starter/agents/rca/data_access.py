@@ -109,7 +109,7 @@ class CSVTelemetryStore:
                 node, pod = raw.split(".", 1)
             elif raw.startswith("node-") and "." in raw:
                 node, pod = raw.split(".", 1)
-            elif raw.startswith("node-"):
+            elif raw in self._catalog.components and self._catalog.components[raw].kind == "node":
                 self._register(source, raw, raw, "node", filename)
                 return (raw,)
             service_match = re.fullmatch(r"(.+)-\d+", pod)
