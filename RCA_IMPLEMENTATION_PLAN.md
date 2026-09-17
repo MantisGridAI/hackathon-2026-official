@@ -13,6 +13,10 @@ deterministic telemetry analysis
         -> deterministic validation and evidence
 ```
 
+Use the official starter/OpenRCA approach as the backbone: query and compress
+telemetry before model reasoning. Borrow anomaly detection and topology-aware
+ranking ideas from ADS-KGRCA without reproducing its full research pipeline.
+
 The agent should imitate an SRE investigation:
 
 1. Check overall service health.
@@ -26,9 +30,9 @@ ranking, confidence-gated routing, and deterministic evidence generation.
 
 ## Scope and Interface
 
-Keep the official starter as the backbone. Modify only
-`track-1/starter/agents/routed.py` unless a narrowly scoped supporting change is
-required. Preserve the `solve(instruction, dataset_dir, ctx) -> Solution`
+Keep the official starter as the backbone. Evolve
+`track-1/starter/agents/routed.py` and use small supporting Python modules under
+`track-1/starter/agents/` where they simplify integration. Preserve the `solve(instruction, dataset_dir, ctx) -> Solution`
 contract, `run.py`, usage accounting, prediction formatting, and failure
 handling.
 
@@ -44,9 +48,13 @@ Do not add Harzoo, MCP, Phoenix, Parquet preprocessing, or a second agent
 framework to the critical runtime path. Plain Python helpers are sufficient for
 the hackathon.
 
-## 1. Preserve the Starter and Submission Contract
+## Six Core Implementation Steps
 
-- Keep `run.py` unchanged.
+### 1. Preserve the Starter and Submission Contract
+
+- Preserve the runner logic in `run.py`. At submission time, set its default
+  agent to the finished module as required by the starter; use `--agent` during
+  development.
 - Keep the current routed agent entry point.
 - Parse the date, time range, failure count, and task fields deterministically.
 - Always return a best guess, even when every model is unavailable.
@@ -56,7 +64,9 @@ the hackathon.
 Formatting mistakes can zero an otherwise correct case, so contract validation
 comes before any model improvement.
 
-## 2. Progressive Telemetry Narrowing
+### 2. Generate Candidates with Metrics
+
+#### Progressive telemetry narrowing
 
 Do not build a full production preprocessing system first. Narrow the search
 space as evidence accumulates:
@@ -82,12 +92,14 @@ Use proper CSV readers and respect the dataset traps:
 Cache only lightweight per-day or per-case data that materially reduces repeat
 scans. Avoid building indexes whose cost exceeds the judging time budget.
 
-## 3. Six Core Analysis Steps
-
-### 3.1 Service triage and onset
+#### Service triage and onset
 
 Start with `metric_service.csv` and compare the incident window with nearby
-baseline data. Inspect success rate, response time, request rate, and count.
+pre-incident baseline data. Inspect success rate, response time, request rate,
+and count. Use post-incident data, when available, to check recovery rather than
+treating it automatically as a healthy baseline. Start with a robust score based
+on median and median absolute deviation, guarding against zero spread and
+missing samples; record sustained threshold crossings and persistence.
 
 For each affected service, record:
 
@@ -103,7 +115,7 @@ replica contrast
 Prefer the first sustained change over the largest spike. This is the first
 layer of the health-check design and supplies the shortlist.
 
-### 3.2 Container and node diagnosis
+#### Container and node diagnosis
 
 Inspect detailed metrics only for shortlisted services and their neighbors.
 Prioritize CPU, memory, read I/O, write I/O, and process termination signals.
@@ -113,21 +125,28 @@ when several unrelated containers on the node change together and the node
 changes first. Prefer a container-level cause when one container changes first
 and explains the later aggregate signal.
 
-### 3.3 Trace and topology analysis
+### 3. Reconstruct Trace Causality and Gather Targeted Logs
 
-Use `trace_span.csv` in the incident window to reconstruct a small causal graph:
+Use `trace_span.csv` around the incident window, with a bounded baseline for
+comparison, to reconstruct a small dependency graph:
 
 - Group spans by `trace_id`.
 - Join `parent_span` to `span_id`.
 - Track component, duration, status, and operation.
 - Compare parent duration with child duration.
 - Identify where abnormal latency or errors first appear.
-- Penalize components that become abnormal only after an upstream failure.
+- Penalize later symptoms only when timing and dependency evidence support
+  propagation from another candidate.
 
 Use the graph to distinguish a root cause from a downstream symptom. A service
 with the largest anomaly is not necessarily the service that failed first.
+Keep call direction separate from fault propagation: in
+`frontend -> checkout -> payment`, payment may fail first and cause later
+checkout and frontend degradation, propagating back toward callers. Earlier
+onset supports a hypothesis; it does not prove causality by itself. Missing
+parents, sparse samples, or uncertain timing must reduce confidence.
 
-### 3.4 Targeted network and log inspection
+#### Targeted network and log inspection
 
 Only inspect mesh and proxy data for candidate components and edges. Look for
 latency gaps, retries, resets, refused connections, timeouts, packet loss,
@@ -143,7 +162,7 @@ OOM    killed   retry       unavailable
 
 Require fault-specific evidence before choosing among network reason labels.
 
-### 3.5 Candidate ranking
+### 4. Rank Candidates with Simple Causal Features
 
 Represent each candidate with:
 
@@ -174,28 +193,15 @@ Do not optimize weights before the features are working. For multiple-failure
 windows, separate independent propagation chains and return answers in
 chronological order instead of selecting the loudest N symptoms.
 
-### 3.6 Deterministic evidence and validation
+### 5. Add Confidence-Gated GLM Routing
 
-Generate evidence directly from measured values. Include:
-
-- Final answer and confidence.
-- Metric onset and baseline comparison.
-- Trace propagation and latency evidence.
-- Targeted log or network evidence when present.
-- Alternatives considered and why they were ruled out.
-- Missing telemetry, model failures, and remaining ambiguity.
-
-Never ask a model to invent measurements or write the authoritative evidence.
-
-## 4. Confidence-Gated GLM Routing
-
-### Level 1: no model
+#### Level 1: no model
 
 Answer deterministically when the leader has a clear score margin, direct
 fault-specific evidence, consistent onset and propagation, and no major
 contradictions. This saves both time and cost.
 
-### Level 2: cheap Flash model
+#### Level 2: cheap Flash model
 
 For uncertain cases, send a compact candidate summary rather than raw telemetry:
 
@@ -218,12 +224,14 @@ Use the existing fallback-aware `LLM` wrapper and keep the cheap tier ordered:
 CHEAP = ["zai-org/GLM-4.7-Flash", "zai-org/GLM-5.3-Flash"]
 ```
 
-### Level 3: strong GLM
+#### Level 3: strong GLM
 
 Escalate only when candidates are close, Flash confidence is low, Flash
 disagrees with deterministic ranking, node-versus-container causality is
 unclear, network subtype is unresolved, multiple failures overlap, or telemetry
-sources conflict.
+sources conflict, or Flash returns invalid output. Allow a bounded strong-tier
+attempt after a Flash failure when budget remains; otherwise use the
+deterministic fallback.
 
 Provide the strong model with candidate summaries, causal order, supporting and
 contradicting evidence, and the Flash decision. Ask for a short constrained JSON
@@ -234,9 +242,39 @@ STRONG = ["zai-org/GLM-5.2", "zai-org/GLM-5.1"]
 ```
 
 The 15 legal reasons make this a constrained classification problem, not an
-open-ended request to explain the incident.
+open-ended request to explain the incident. Source the exact labels from the
+starter and validate node/container compatibility. CPU or memory measurements
+can support their corresponding load labels; several unrelated containers
+degrading together can support a node hypothesis. Generic timeouts alone cannot
+distinguish network latency, packet loss, retransmission, and corruption.
 
-## 5. Reliability and Budget
+Keep candidate scores separate from calibrated probabilities. Model-reported
+confidence alone must not control escalation; use score margins, missing
+evidence, contradictions, and validation results as well.
+
+### 6. Generate Deterministic Evidence and Evaluate
+
+Generate evidence directly from measured values. Include:
+
+- Final answer and confidence, with the routing decision.
+- Metric onset, baseline comparison, and persistence.
+- Trace propagation, latency evidence, and healthy replica comparisons.
+- Targeted log or network evidence when present.
+- Alternatives considered and the measurements that weaken them.
+- Missing telemetry, model failures, and remaining ambiguity.
+
+Attach source references and time windows to measurements. Never ask a model to
+invent measurements or write the authoritative evidence. Unobserved CPU or
+memory is missing evidence, not proof that those resources were normal.
+
+Validate exact failure count, component/reason compatibility, timestamps, and
+`format_prediction()` output before returning `Solution`. For multiple failures,
+select independent supported hypotheses rather than duplicate symptoms. If the
+shortlist is insufficient, widen the bounded search and make the best legal
+fallback guesses, marking weak evidence honestly. Verify the runner writes a
+prediction and evidence file even when models fail.
+
+#### Reliability and budget
 
 - Read credentials and endpoint from the environment through `llm.py`.
 - Let the existing wrapper retry briefly, fall back within a tier, and stop
@@ -247,30 +285,91 @@ open-ended request to explain the incident.
 - Target substantially less than one minute per case on average.
 - Keep cost comfortably below the $1.25 judged-run average per case.
 
-## 6. Evaluation Plan
+#### Evaluation scope
 
-Compare configurations on the same development cases:
+Required first comparison: single strong-model configuration versus the routed
+hybrid agent on the same development cases. Add the official metric-only
+heuristic as a third configuration if time permits. Defer Flash-only,
+trace-only, and repeat-variance studies until the core comparison works.
 
-1. Existing metric-only heuristic.
-2. Improved deterministic telemetry and trace agent.
-3. Flash-only routing.
-4. Strong-only routing.
-5. Confidence-routed hybrid agent.
-
-At minimum compare the routed agent with:
+Run from `track-1/`, scoring and costing each run before the next run reuses
+`out/dev/`. Save each run's predictions, evidence, usage, and reports in a
+separate experiment directory before continuing:
 
 ```bash
+make validate AGENT=agents.routed
 make dev N=20 AGENT=agents.routed
+make score
+make cost
+# Archive out/dev/ and reports before the next run.
 RCA_MODEL=zai-org/GLM-5.2 make dev N=20 AGENT=agents.routed
 make score
 make cost
 ```
 
-Record strict and partial accuracy, accuracy by task and difficulty, fully
-solved cases, dollars per case, runtime, model calls, escalation rate, and
-repeat-run variance. Spot-check evidence against raw telemetry. Categorize
-errors as timestamp, component, reason, node/container, network, multiple
-failure, or formatting errors.
+`RCA_MODEL` currently pins model identity; it does not force a model call.
+Preserve that override when implementing routing and report deterministic
+bypasses in both runs. An always-strong comparison would require an explicit
+routing override and must be labeled separately.
+
+Record accuracy, fully solved cases, dollars per case, runtime, model calls,
+and escalation rate. Break down scores by task and difficulty using the starter
+scorer. Hold back development cases for evaluation or disclose tuning overlap.
+Spot-check evidence against raw telemetry and categorize failures as timestamp,
+component, reason, node/container, network, multiple-failure, or formatting.
+
+## Shared Interface and Team Ownership
+
+Use a small shared structure across the implementation:
+
+```text
+analyze_case(instruction, dataset_dir)
+    -> parsed incident and metric candidates
+    -> trace evidence
+    -> targeted log evidence
+    -> ranked candidates
+    -> routed decision
+    -> validated prediction + deterministic evidence
+```
+
+Each candidate carries a stable ID, exact component, possible legal reasons,
+onset, persistence, score features, supporting and contradicting evidence,
+and propagation links. Evidence records include the source file, component or
+edge, time window, and measured values. Model responses select supplied
+candidate/reason IDs; deterministic code retains measured timestamps and facts.
+
+Suggested ownership for a four-person team:
+
+- **A — Metrics:** service health, robust scores, onset, persistence, replica and
+  node comparisons.
+- **B — Traces:** dependency graph, parent-child reconstruction, latency/error
+  propagation, and symptom penalties.
+- **C — Agent:** shared candidate schema, ranking integration, Flash routing,
+  strong escalation, JSON validation, and fallback.
+- **D — Logs and evaluation:** targeted searches, deterministic evidence,
+  benchmarks, and submission integration checks.
+
+Agree on the shared schema first, then integrate a working path through all six
+steps before adding detector sophistication.
+
+## Deferred Work and Presentation
+
+Do not build full-day preprocessing, Parquet caches, broad telemetry indexes,
+log-template clustering, heavy learned anomaly detectors, or complete separate
+application/network detector systems for the first version. Prioritize a
+container/node metric detector, trace/network analysis, and simple log search.
+
+Skip Harzoo for this hackathon. Plain Python functions can later become MCP
+tools; MCP is an extension point, not a runtime requirement. Phoenix may be
+added for development tracing after the pipeline works, outside its critical
+path.
+
+The demo should show an SRE-style investigation: service health checks narrow
+the suspects, traces explain propagation, targeted logs support fault labels,
+and measured evidence explains the decision. Show easy cases solved without a
+model, ambiguous cases sent to Flash, and difficult cases escalated to a strong
+GLM. Support the accuracy, cost, latency, and explainability story with the
+measured comparison rather than assuming routing improves all four.
 
 ## Definition of Done
 
