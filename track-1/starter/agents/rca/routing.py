@@ -126,7 +126,9 @@ class Router:
                                                max_tokens=OUTPUT_TOKENS)
             duration = time.monotonic() - started
             actual = result.model
-            accounted_model = actual if actual in PRICES else model
+            # Preserve provider identity even on a policy violation. Charging an
+            # unexpected model to the requested GLM would fabricate attribution.
+            accounted_model = actual
             usage = self.state.usage_ledger.setdefault(accounted_model, dict(
                 calls=0, prompt_tokens=0, completion_tokens=0, unknown_usage_calls=0))
             usage["calls"] += 1
@@ -135,14 +137,16 @@ class Router:
                 if value is not None:
                     usage[field] += value
             known_usage = result.prompt_tokens is not None and result.completion_tokens is not None
-            if known_usage:
+            if known_usage and actual in PRICES:
                 p_in, p_out = PRICES[accounted_model]
                 cost = (result.prompt_tokens * p_in + result.completion_tokens * p_out) / 1e6
                 self.state.estimated_cost_usd += cost - reserve
             else:
-                usage["unknown_usage_calls"] = usage.get("unknown_usage_calls", 0) + 1
+                if not known_usage:
+                    usage["unknown_usage_calls"] = usage.get("unknown_usage_calls", 0) + 1
                 cost = None
-            status = result.error
+            unknown_cost = cost is None
+            status = result.error or ("unexpected_model" if actual not in PRICES else None)
             payload = None
             if status is None and cfg.pinned_model and actual != cfg.pinned_model:
                 status = "pinned_model_mismatch"
@@ -162,7 +166,7 @@ class Router:
                               prompt_tokens=result.prompt_tokens,
                               completion_tokens=result.completion_tokens,
                               estimated_cost_usd=cost,
-                              retained_reservation_usd=reserve if not known_usage else 0.))
+                              retained_reservation_usd=reserve if unknown_cost else 0.))
             if payload is not None and status == "valid":
                 return payload
         return None

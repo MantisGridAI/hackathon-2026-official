@@ -16,7 +16,7 @@ Actual checks on Windows, Python 3.12.14 bundled runtime:
 
 ```
 python -m unittest discover -s tests/m4 -p 'test_*.py' -v
-# 36 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
+# 38 offline tests pass; optional real-window check skips without RCA_TEST_DATA.
 
 RCA_TEST_DATA=<official Market-cloudbed-1 directory>
 python -m unittest discover -s tests/m4 -p test_real_window.py -v
@@ -39,6 +39,13 @@ Unknown provider token counts remain null in `diagnostics/routes.jsonl`; their
 reservations stay charged to the internal budget. Official usage totals contain
 observed token counts plus `unknown_usage_calls`, so offline evaluation must not
 mistake incomplete provider accounting for a measured zero cost.
+
+`diagnostics/evidence/<invocation_index>.json` atomically persists the full case,
+final decision, structured evidence and observed catalog, with aware ISO datetime
+strings. This supports independent replay without dumping all measurements into
+the Markdown explanation. It contains no raw model prompts or credentials.
+Unexpected provider model identities retain their actual attribution and an
+unknown cost; they never inherit the requested model's price.
 
 Missing/failed tools return explicit coverage warnings. No supported component
 causes a disclosed `unknown-component` placeholder; absent onset uses a disclosed

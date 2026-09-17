@@ -1,5 +1,6 @@
 from copy import deepcopy
 import json
+from pathlib import Path
 from tempfile import TemporaryDirectory
 import time
 from types import SimpleNamespace
@@ -87,6 +88,12 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(solution.usage[CHEAP[0]]["prompt_tokens"], 9)
         self.assertIn("synthetic-pod", solution.prediction)
         self.assertEqual(solution.evidence.count("## "), 4)
+        saved = json.loads((Path(self.tmp.name) / "diagnostics/evidence/1.json").read_text())
+        self.assertEqual(saved["case_key"], case().case_key)
+        self.assertEqual(saved["validation_status"], "invalid")
+        self.assertEqual(saved["decision"]["usage_delta"][CHEAP[0]]["calls"], 1)
+        self.assertEqual(saved["evidence"][0]["evidence_id"], "e1")
+        self.assertTrue(saved["case"]["start"].endswith("+08:00"))
 
     def test_renderer_exception_retains_fallback_guess_and_usage(self):
         from agents import routed

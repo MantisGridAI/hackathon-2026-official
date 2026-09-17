@@ -134,9 +134,17 @@ def rank_candidates(case, candidates, evidence):
 
 
 def _same_episode(left, right):
+    separated = bool(left.onset_interval and right.onset_interval and
+        (left.onset_interval[1] < right.onset_interval[0] or right.onset_interval[1] < left.onset_interval[0]))
     if left.component == right.component:
         if left.onset_interval and right.onset_interval:
             return max(left.onset_interval[0], right.onset_interval[0]) <= min(left.onset_interval[1], right.onset_interval[1])
+        return True
+    shared_network_observation = (
+        set(left.supporting_ids) == set(right.supporting_ids) and bool(left.supporting_ids) and
+        (left.features.get("traces.network_family") or left.features.get("network.anomaly_score")) and
+        (right.features.get("traces.network_family") or right.features.get("network.anomaly_score")))
+    if shared_network_observation and not separated:
         return True
     return left.episode_id is not None and left.episode_id == right.episode_id
 
@@ -150,8 +158,10 @@ def choose_candidates(ranked, count, edges=()):
         if any(_same_episode(c, previous) for previous in chosen):
             continue
         related = any(frozenset((c.component, previous.component)) in connected and
-                      c.onset_interval and previous.onset_interval and
-                      max(c.onset_interval[0], previous.onset_interval[0]) <= min(c.onset_interval[1], previous.onset_interval[1])
+                      ((c.onset_interval and previous.onset_interval and
+                        max(c.onset_interval[0], previous.onset_interval[0]) <= min(c.onset_interval[1], previous.onset_interval[1])) or
+                       ((not c.onset_interval or not previous.onset_interval) and
+                        bool(set(c.supporting_ids).intersection(previous.supporting_ids))))
                       for previous in chosen)
         if related:
             deferred.append(c)

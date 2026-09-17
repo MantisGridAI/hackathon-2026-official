@@ -1,7 +1,10 @@
 """Official RCA entry point: bounded tools, model routing and validated evidence."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
+import json
+import os
 from pathlib import Path
 import re
 import time
@@ -11,6 +14,33 @@ from agents.rca.contracts import CONTAINER_REASONS, ComponentCatalog
 from agents.rca.ranking import make_decision
 from agents.rca.routing import load_config, snapshot_usage, usage_delta
 from agents.rca.runtime import get_run_state, parse_case
+
+
+def _save_diagnostic(case, decision, evidence, catalog, state, validation_status):
+    """Atomic, inspectable full ledger; raw model messages/credentials are absent."""
+    root = Path(state.out_dir).resolve()
+    directory = root / "diagnostics" / "evidence"
+    directory.resolve().relative_to(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{state.invocation_index}.json"
+    temporary = target.with_suffix(".json.tmp")
+    target.resolve().relative_to(root)
+    temporary.resolve().relative_to(root)
+    payload = {"schema_version": "rca-v1", "invocation_index": state.invocation_index,
+               "case_key": case.case_key, "case": asdict(case),
+               "decision": asdict(decision), "evidence": [asdict(record) for record in evidence],
+               # raw_to_components has tuple keys; component records suffice for
+               # replay/semantic validation without changing the shared catalog.
+               "catalog": {"components": {key: asdict(value) for key, value in catalog.components.items()},
+                           "coverage": [asdict(value) for value in catalog.coverage]},
+               "validation_status": validation_status}
+    def encode(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        raise TypeError("Unsupported diagnostic value")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, default=encode, ensure_ascii=False, allow_nan=False)
+    os.replace(temporary, target)
 
 
 def _emergency(instruction, *, case=None, decision=None, notes=(), usage=None):
@@ -56,6 +86,7 @@ def solve(instruction: str, dataset_dir: Path, ctx: dict) -> Solution:
     state = None
     case = None
     fallback = None
+    investigation = None
     before = {}
     started = time.monotonic()
     try:
@@ -68,16 +99,21 @@ def solve(instruction: str, dataset_dir: Path, ctx: dict) -> Solution:
                                  warnings=["No causal evidence collected yet"])
         from agents.rca.controller import investigate
         result = investigate(case, state, deadline=min(state.deadline, started + config.case_soft_seconds))
+        investigation = result
         fallback = result.fallback
         from agents.rca.validation import validate_and_render
         result.decision.usage_delta = usage_delta(state, before)
         fallback.usage_delta = usage_delta(state, before)
-        rendered = validate_and_render(case, result.decision, result.evidence,
+        chosen = result.decision
+        rendered = validate_and_render(case, chosen, result.evidence,
                                        state.store.component_catalog())
         if rendered.validation_status == "invalid":
             fallback.limitations.extend(["Preferred decision rejected by output validation"] + rendered.errors)
+            chosen = fallback
             rendered = validate_and_render(case, fallback, result.evidence,
                                            state.store.component_catalog())
+        _save_diagnostic(case, chosen, result.evidence, state.store.component_catalog(),
+                         state, rendered.validation_status)
         if rendered.validation_status == "invalid":
             return _emergency(instruction, case=case, decision=fallback,
                               notes=rendered.errors + rendered.warnings,
@@ -90,5 +126,13 @@ def solve(instruction: str, dataset_dir: Path, ctx: dict) -> Solution:
     except Exception as exc:
         # Include paid attempts even when downstream formatting or tooling failed.
         counts = usage_delta(state, before) if state is not None else {}
+        if investigation is not None and fallback is not None:
+            try:
+                fallback.usage_delta = counts
+                _save_diagnostic(case, fallback, investigation.evidence,
+                                 state.store.component_catalog(), state, "emergency")
+            except Exception:
+                # Preserve the answer even if diagnostic serialization/storage fails.
+                pass
         return _emergency(instruction, case=case, decision=fallback,
                           notes=["Runtime failure: " + type(exc).__name__], usage=counts)

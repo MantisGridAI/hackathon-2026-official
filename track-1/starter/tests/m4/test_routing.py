@@ -114,6 +114,17 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(usage_delta(self.state, before)[CHEAP[0]]["calls"], 1)
         self.assertEqual(usage_delta(self.state, before)[CHEAP[0]]["prompt_tokens"], 20)
 
+    def test_unexpected_provider_model_keeps_identity_and_unknown_cost(self):
+        self.state.config.pinned_model = CHEAP[0]
+        self.state.client = Transport([response("unexpected/provider", None, 100, 20, "unexpected_model")])
+        router = self.router()
+        router.request("flash", [], reason="test", validate=json.loads)
+        self.assertNotIn(CHEAP[0], self.state.usage_ledger)
+        self.assertEqual(self.state.usage_ledger["unexpected/provider"]["prompt_tokens"], 100)
+        self.assertIsNone(router.events[-1]["estimated_cost_usd"])
+        self.assertGreater(router.events[-1]["retained_reservation_usd"], 0)
+        self.assertGreater(self.state.estimated_cost_usd, 0)
+
     def test_deterministic_no_client_or_credentials(self):
         self.state.config.mode = "deterministic"
         with patch("agents.rca.routing.LLM", side_effect=AssertionError("client must not initialize")):
