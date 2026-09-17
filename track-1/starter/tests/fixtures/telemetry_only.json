@@ -1,0 +1,97 @@
+{
+  "fixture_kind": "real telemetry-only locator sample; not a complete incident window",
+  "bundle": "official Market-cloudbed-1",
+  "selection": "first CSV data record of each source on2022_03_20",
+  "origin_manifest_sha256": "997866a8dc739b7162c7d91d64a1e837a13d778e1b969998a1bbd8dab286db7c",
+  "records": [
+    {
+      "source_file": "telemetry/2022_03_20/log/log_proxy.csv",
+      "record_index": 1,
+      "raw_record": {
+        "log_id": "TrqhpH8BDiVcQfZwGQ4i",
+        "timestamp": "1647734485",
+        "cmdb_id": "adservice-0",
+        "log_name": "log_adservice-envoy_gateway",
+        "value": "\"POST /hipstershop.AdService/GetAds HTTP/2\" 200 - via_upstream - \"-\" 15 97 2 2 \"-\" \"grpc-go/1.31.0\" \"3eaca49c-f2a2-9cf2-a110-ebbde01db1aa\" \"adservice:9555\" \"172.20.3.4:9555\" inbound|9555|| 127.0.0.6:60627 172.20.3.4:9555 172.20.3.12:52936 outbound_.9555_._.adservice.ts.svc.cluster.local default"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/log/log_service.csv",
+      "record_index": 1,
+      "raw_record": {
+        "log_id": "Fovpon8BDiVcQfZwJ5a9",
+        "timestamp": "1647705660",
+        "cmdb_id": "currencyservice-1",
+        "log_name": "log_currencyservice-service_application",
+        "value": "severity: info, message: conversion request successful"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/metric/metric_container.csv",
+      "record_index": 1,
+      "raw_record": {
+        "timestamp": "1647759600",
+        "cmdb_id": "node-6.adservice2-0",
+        "kpi_name": "container_network_receive_packets_dropped.eth0",
+        "value": "0.0"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/metric/metric_mesh.csv",
+      "record_index": 1,
+      "raw_record": {
+        "timestamp": "1647777600",
+        "cmdb_id": "istio-egressgateway-7bfdcc9d86-zpjpg",
+        "kpi_name": "istio_agent_startup_duration_seconds",
+        "value": "2.573041117"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/metric/metric_node.csv",
+      "record_index": 1,
+      "raw_record": {
+        "timestamp": "1647705600",
+        "cmdb_id": "node-1",
+        "kpi_name": "system.cpu.iowait",
+        "value": "0.31"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/metric/metric_runtime.csv",
+      "record_index": 1,
+      "raw_record": {
+        "timestamp": "1647759600",
+        "cmdb_id": "adservice.ts:8088",
+        "kpi_name": "java_nio_BufferPool_TotalCapacity.direct",
+        "value": "57343.0"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/metric/metric_service.csv",
+      "record_index": 1,
+      "raw_record": {
+        "service": "adservice-grpc",
+        "timestamp": "1647716400",
+        "rr": "100.0",
+        "sr": "100.0",
+        "mrt": "2.429508196728182",
+        "count": "61"
+      }
+    },
+    {
+      "source_file": "telemetry/2022_03_20/trace/trace_span.csv",
+      "record_index": 1,
+      "raw_record": {
+        "timestamp": "1647705600395",
+        "cmdb_id": "currencyservice-1",
+        "span_id": "cf4f12dee7b2b1d8",
+        "trace_id": "7b532f0b62717b83b9d3ff72e97447c2",
+        "duration": "120",
+        "type": "telemetry",
+        "status_code": "0",
+        "operation_name": "grpc.hipstershop.CurrencyService/Convert",
+        "parent_span": "dc3292f5e193a9a3"
+      }
+    }
+  ]
+}

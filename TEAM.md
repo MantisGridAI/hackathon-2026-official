@@ -2,7 +2,9 @@
 
 目标是一个无人值守的 RCA Agent：根据真实遥测判断题目要求的时间、组件和原因，按调用选择 GLM，输出可核查证据，并完成同 Agent 的 single-model / routed 对照。交付物是 **Agent + Evaluation + Explanation**。
 
-本次文档配置基于 starter 与 implementation plan 的 `ce54409`。下列新模块是实施契约，不是已完成功能；现有可运行代码仍在 `track-1/starter/`。不创建第二套 Agent，不把 notebook 当正式入口。
+模块规范最初基于 starter 与 implementation plan 的 `ce54409`。本次用户明确授权的五模块本地实现已落在 `track-1/starter/`，运行、校验与评测代码已接线；实测结果和未完成的环境验收见根 `REPORT.md`。不创建第二套 Agent，不把 notebook 当正式入口。
+
+本地实现由 Codex 主代理协调，subagents 在独立 worktree 中负责 M2、M3、M4，随后接续 M5。各部分先测试再提交。下方 GitHub 认领表仍是人工团队/远程 PR 认领记录，本次没有冒填 GitHub 身份或发布认领 PR；本地集成不等同于已推送远程或最终比赛验收。
 
 ## 1. 认领一块完整交付，不认领一个模糊主题
 

@@ -1,5 +1,7 @@
 """Opt-in smoke against official telemetry; never opens development labels."""
 import csv
+import hashlib
+import json
 import os
 from pathlib import Path
 import time
@@ -12,6 +14,17 @@ from agents.rca.runtime import parse_case
 
 @unittest.skipUnless(os.environ.get("RCA_TEST_DATA"), "RCA_TEST_DATA is required for real telemetry checks")
 class RealStoreTests(unittest.TestCase):
+    def test_small_telemetry_only_fixture_matches_official_records(self):
+        dataset = Path(os.environ["RCA_TEST_DATA"])
+        sample = json.loads((Path(__file__).resolve().parents[1] / "fixtures/telemetry_only.json").read_text(encoding="utf-8"))
+        self.assertEqual(sample["origin_manifest_sha256"], hashlib.sha256((dataset / "manifest.json").read_bytes()).hexdigest())
+        self.assertEqual(len(sample["records"]), 8)
+        for record in sample["records"]:
+            self.assertEqual(record["record_index"], 1)
+            self.assertTrue(record["source_file"].startswith("telemetry/"))
+            with (dataset / record["source_file"]).open(encoding="utf-8", newline="") as stream:
+                self.assertEqual(next(csv.DictReader(stream)), record["raw_record"])
+
     def test_official_query_window_and_record_replay(self):
         dataset = Path(os.environ["RCA_TEST_DATA"])
         with (dataset / "query.csv").open(encoding="utf-8", newline="") as fh:

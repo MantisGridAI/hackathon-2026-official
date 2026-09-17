@@ -1,6 +1,10 @@
 # Shared interfaces — rca-v1
 
-这是五模块共同实现的接口规范，不是已存在的 Python 库。**本文件是共享结构与签名的唯一维护源**；M1 将类型落在 `track-1/starter/agents/rca/contracts.py`，其余模块导入，不复制。版本为 `rca-v1`。添加可选字段保持默认值；重命名、删除或改语义先提交契约 PR，由受影响模块同步迁移。
+这是五模块共同实现的接口规范。**本文件是共享结构与签名的唯一维护源**；实现类型位于 `track-1/starter/agents/rca/contracts.py`，其余模块导入，不复制。版本为 `rca-v1`。添加可选字段保持默认值；重命名、删除或改语义先提交契约 PR，由受影响模块同步迁移。
+
+实现位置：`runtime.py` 提供 parser/RunState，`data_access.py` 提供有界 CSV store，`contracts.py` 提供 `stable_id` 与类型。`stable_id` 的规范化 JSON envelope 为 `{"case_key": case_key, "payload": payload}`。证据的 `transform_params.retained_rows_per_query` 记录实际消费的匹配记录前缀长度，partial 扫描也按该前缀重放；重放无法取得足量原始输入时显式报未验证，不使用后续记录替换。
+
+诊断文件不是官方 Solution 的扩展字段：M4 保存 `out/diagnostics/evidence/<invocation_index>.json`，包含 case、最终 decision、完整 evidence 与 catalog，供离线审核；M1 runner 保存 `out/diagnostics/attempts/<attempt_id>.json` 的原始 row_id 映射。续跑从现有 invocation 最大值继续，避免覆盖旧证据；M5 汇总所有尝试的 usage。
 
 所有实现路径从仓库根计算。运行时 import 以 `track-1/starter/` 为 Python 根，如 `from agents.rca.contracts import CaseContext`。以下结构推荐用 dataclass / TypedDict / Protocol，不引入新框架。
 
