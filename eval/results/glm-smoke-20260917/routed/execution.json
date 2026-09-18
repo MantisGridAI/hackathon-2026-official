@@ -1,0 +1,7 @@
+{
+  "external_wall_s": 306.71800000000076,
+  "returncode": 0,
+  "timed_out": false,
+  "peak_memory_bytes": null,
+  "resource_limit_status": "No container resource measurement; see manifest hardware_limits"
+}

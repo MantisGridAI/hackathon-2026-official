@@ -1,0 +1,13 @@
+.git
+.worktrees
+.venv
+**/__pycache__
+**/*.pyc
+**/data
+**/out
+**/.env
+**/.env.*
+**/*.zip
+**/*.parquet
+**/*.pkl
+track-1/starter/tests

@@ -1,0 +1,2 @@
+{"row_id": 6, "task_index": "task_6", "wall_s": 148.1, "prompt_tokens": 143437, "completion_tokens": 1200, "calls": 1, "models": {"zai-org/GLM-4.7-Flash": {"calls": 1, "prompt_tokens": 143437, "completion_tokens": 1200, "unknown_usage_calls": 0}}}
+{"row_id": 25, "task_index": "task_7", "wall_s": 157.89, "prompt_tokens": 146240, "completion_tokens": 1200, "calls": 1, "models": {"zai-org/GLM-4.7-Flash": {"calls": 1, "prompt_tokens": 146240, "completion_tokens": 1200, "unknown_usage_calls": 0}}}

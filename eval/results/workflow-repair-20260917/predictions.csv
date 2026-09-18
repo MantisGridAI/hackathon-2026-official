@@ -1,0 +1,182 @@
+row_id,prediction,task_index,wall_s,prompt_tokens,completion_tokens,calls
+0,"```json
+{
+    ""1"": {
+        ""root cause component"": ""paymentservice2-0"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,26.92,7767,298,2
+1,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 09:32:30""
+    }
+}
+```",task_1,22.88,6815,293,2
+2,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 10:00:00""
+    }
+}
+```",task_1,24.17,7903,350,2
+3,"```json
+{
+    ""1"": {
+        ""root cause component"": ""shippingservice-1"",
+        ""root cause reason"": ""container read I/O load""
+    }
+}
+```",task_6,31.27,6593,277,2
+4,"```json
+{
+    ""1"": {
+        ""root cause component"": ""shippingservice-1""
+    }
+}
+```",task_3,35.42,7333,272,2
+5,"```json
+{
+    ""1"": {
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_2,36.42,7899,340,2
+6,"```json
+{
+    ""1"": {
+        ""root cause component"": ""recommendationservice-0"",
+        ""root cause reason"": ""container CPU load""
+    },
+    ""2"": {
+        ""root cause component"": ""recommendationservice-2"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,34.49,8201,336,2
+7,"```json
+{
+    ""1"": {
+        ""root cause component"": ""recommendationservice-0"",
+        ""root cause reason"": ""container CPU load""
+    },
+    ""2"": {
+        ""root cause component"": ""recommendationservice-2"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,47.63,8176,359,3
+8,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:02:30"",
+        ""root cause component"": ""productcatalogservice-1""
+    }
+}
+```",task_5,24.03,7667,329,2
+9,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:39:00"",
+        ""root cause reason"": ""node CPU load""
+    },
+    ""2"": {
+        ""root cause occurrence datetime"": ""2022-03-20 13:51:30"",
+        ""root cause reason"": ""node CPU load""
+    }
+}
+```",task_4,44.79,8018,340,3
+14,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 17:22:30"",
+        ""root cause component"": ""paymentservice-0""
+    },
+    ""2"": {
+        ""root cause occurrence datetime"": ""2022-03-20 17:22:30"",
+        ""root cause component"": ""paymentservice-2""
+    }
+}
+```",task_5,27.71,6733,358,2
+20,"```json
+{
+    ""1"": {
+        ""root cause component"": ""shippingservice2-0"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,25.54,7981,304,2
+27,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 08:47:30"",
+        ""root cause component"": ""frontend-1"",
+        ""root cause reason"": ""container read I/O load""
+    },
+    ""2"": {
+        ""root cause occurrence datetime"": ""2022-03-20 08:48:30"",
+        ""root cause component"": ""adservice-1"",
+        ""root cause reason"": ""container read I/O load""
+    }
+}
+```",task_7,26.75,7439,371,2
+34,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-21 01:15:00""
+    },
+    ""2"": {
+        ""root cause occurrence datetime"": ""2022-03-21 01:19:30""
+    }
+}
+```",task_1,22.88,8365,356,2
+41,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-21 05:35:30""
+    }
+}
+```",task_1,24.3,7919,328,2
+48,"```json
+{
+    ""1"": {
+        ""root cause component"": ""cartservice-1""
+    },
+    ""2"": {
+        ""root cause component"": ""checkoutservice-1""
+    }
+}
+```",task_3,32.91,7463,447,2
+53,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-21 11:39:00""
+    }
+}
+```",task_1,32.76,8221,255,2
+60,"```json
+{
+    ""1"": {
+        ""root cause reason"": ""container read I/O load""
+    }
+}
+```",task_2,41.53,3363,119,2
+65,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-21 23:15:30"",
+        ""root cause reason"": ""node memory consumption""
+    }
+}
+```",task_4,21.3,3907,120,1
+69,"```json
+{
+    ""1"": {
+        ""root cause reason"": ""container read I/O load""
+    },
+    ""2"": {
+        ""root cause reason"": ""container read I/O load""
+    }
+}
+```",task_2,24.74,6663,394,2

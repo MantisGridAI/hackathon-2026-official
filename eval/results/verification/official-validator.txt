@@ -1,0 +1,12 @@
+  ok    run.py present
+
+$ <python> run.py --dataset <repo>\track-1\data\Market-cloudbed-1 --queries <repo>\track-1\data\Market-cloudbed-1\dev\query_dev.csv --out <temporary-output> --limit 2 --agent agents.routed
+
+  ok    run.py completed 2 case(s)
+  ok    predictions.csv has `row_id`
+  ok    predictions.csv has `prediction`
+  ok    predictions.csv has 2 rows
+  ok    at least one prediction parses
+  ok    evidence/ has one .md per case (2)
+
+Submission shape is valid. 0 warning(s) worth reading.

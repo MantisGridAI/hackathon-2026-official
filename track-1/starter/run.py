@@ -24,10 +24,14 @@ import json
 import os
 import time
 import traceback
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
+
+# Include interpreter/import overhead conservatively in the shared run budget.
+RUN_STARTED_MONOTONIC = time.monotonic() - 1.0
 
 
 @dataclass
@@ -77,12 +81,31 @@ def format_prediction(answers: list[dict]) -> str:
     return "```json\n" + json.dumps(out, indent=4) + "\n```"
 
 
+def _previous_invocation_index(out: Path) -> int:
+    """Preserve prior diagnostic identities when resuming a partially saved run."""
+    maximum = 0
+    for path in (out / "diagnostics" / "evidence").glob("*.json"):
+        if path.stem.isdigit():
+            maximum = max(maximum, int(path.stem))
+    routes = out / "diagnostics" / "routes.jsonl"
+    if routes.exists():
+        with routes.open(encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    value = json.loads(line).get("invocation_index")
+                    if isinstance(value, int) and value >= 0:
+                        maximum = max(maximum, value)
+                except (ValueError, AttributeError):
+                    pass  # Offline audit reports malformed records; do not erase them.
+    return maximum
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--dataset", required=True, help="bundle dir, containing telemetry/")
     p.add_argument("--queries", required=True, help="query.csv")
     p.add_argument("--out", required=True)
-    p.add_argument("--agent", default="agents.heuristic",
+    p.add_argument("--agent", default="agents.routed",
                    help="module exposing solve(instruction, dataset_dir, ctx)")
     p.add_argument("--limit", type=int, default=0, help="first N cases only")
     p.add_argument("--resume", action="store_true",
@@ -106,8 +129,17 @@ def main() -> None:
         done = set(prev.row_id.astype(int))
         print(f"resuming: {len(done)} case(s) already done")
 
+    invocation_offset = _previous_invocation_index(out) if args.resume else 0
+    pending_ids = [int(r.row_id) for r in queries.itertuples(index=False) if int(r.row_id) not in done]
+    attempts = out / "diagnostics" / "attempts"
+    attempts.mkdir(parents=True, exist_ok=True)
+    attempt = {"resumed": args.resume, "agent": args.agent, "invocation_offset": invocation_offset,
+               "planned_row_ids_in_order": pending_ids,
+               "invocation_rows": {str(invocation_offset + index): rid for index, rid in enumerate(pending_ids, 1)}}
+    (attempts / (uuid.uuid4().hex + ".json")).write_text(json.dumps(attempt, indent=2), encoding="utf-8")
     agent = importlib.import_module(args.agent)
-    ctx = {"dataset_dir": dataset, "out_dir": out}
+    ctx = {"dataset_dir": dataset, "out_dir": out,
+           "started_monotonic": RUN_STARTED_MONOTONIC, "invocation_offset": invocation_offset}
 
     for r in queries.itertuples(index=False):
         rid = int(r.row_id)
@@ -123,13 +155,13 @@ def main() -> None:
                            + traceback.format_exc() + "```")
         wall = time.time() - t0
 
-        (out / "evidence" / f"{rid}.md").write_text(sol.evidence or "_no evidence_\n")
+        (out / "evidence" / f"{rid}.md").write_text(sol.evidence or "_no evidence_\n", encoding="utf-8")
         models = per_model(sol.usage or {})
         rec = {"row_id": rid, "prediction": sol.prediction,
                "task_index": getattr(r, "task_index", ""), "wall_s": round(wall, 2),
                **{k: sum(m.get(k, 0) for m in models.values()) for k in COUNTS}}
         rows.append(rec)
-        with (out / "usage.jsonl").open("a") as fh:
+        with (out / "usage.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({k: v for k, v in rec.items() if k != "prediction"}
                                 | {"models": models}) + "\n")
         # Written after every case: a run that stops at case 60 keeps the first 59.

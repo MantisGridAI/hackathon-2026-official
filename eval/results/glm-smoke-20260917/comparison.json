@@ -1,0 +1,48 @@
+{
+  "schema_version": "comparison.v1",
+  "matched_conditions": true,
+  "condition_mismatches": [],
+  "all_run_integrity_valid": true,
+  "routing_comparison_measured": true,
+  "configurations": {
+    "single-model": {
+      "repetitions": 1,
+      "mean_partial": 0.335,
+      "partial_variance": null,
+      "variance_status": "not measured: one repetition",
+      "strict_fraction": 0.0,
+      "total_known_cost_usd": 0.41378519999999996,
+      "pricing_complete": true,
+      "request_attempts": 2,
+      "external_wall_s": {
+        "count": 1,
+        "mean": 201.875,
+        "median": 201.875,
+        "p95": 201.875,
+        "max": 201.875
+      }
+    },
+    "routed": {
+      "repetitions": 1,
+      "mean_partial": 0.5,
+      "partial_variance": null,
+      "variance_status": "not measured: one repetition",
+      "strict_fraction": 0.5,
+      "total_known_cost_usd": 0.019789005000000002,
+      "pricing_complete": true,
+      "request_attempts": 2,
+      "external_wall_s": {
+        "count": 1,
+        "mean": 306.71800000000076,
+        "median": 306.71800000000076,
+        "p95": 306.71800000000076,
+        "max": 306.71800000000076
+      }
+    }
+  },
+  "interpretation": "Matched same-agent routing comparison with actual calls; inspect repetitions and uncertainty.",
+  "pairwise_partial_deltas_from_first": [
+    0.0,
+    0.16499999999999998
+  ]
+}

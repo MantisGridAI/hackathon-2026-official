@@ -1,0 +1,29 @@
+{
+  "schema_version": "authenticated-smoke.v1",
+  "code_revision": "7bc31e71d0b02aa44bef5c7da004dee68fa4f62b",
+  "provider": "https://api.featherless.ai/v1",
+  "planned_row_ids": [
+    6,
+    25
+  ],
+  "repetitions_per_configuration": 1,
+  "authorization_scope": "At most two short probes plus two cases in each of single-model and routed, once; at most 18 requests.",
+  "probe_requests": 2,
+  "comparison_requests": 4,
+  "total_requests": 6,
+  "request_limit": 18,
+  "known_estimated_cost_usd_including_probes": 0.43362407999999997,
+  "unknown_cost_calls": 0,
+  "total_estimated_cost_usd_including_probes": 0.43362407999999997,
+  "pricing_basis": "Observed provider token usage priced at the frozen official Track 1 price table; not an account billing receipt.",
+  "prompt_tokens_including_probes": 579360,
+  "completion_tokens_including_probes": 4386,
+  "probe_external_wall_s": 6.203,
+  "limitations": [
+    "Only two public development cases and one sequential single-first repetition; no measured variance or held-out result.",
+    "Native Windows execution; no container CPU/memory enforcement, OS cache uncontrolled.",
+    "The SDK inactivity timeout did not enforce an absolute call deadline; these frozen runs exposed that defect.",
+    "Large prompts and reasoning-only/empty output occurred; later prompt/deadline fixes do not retroactively change these measurements.",
+    "Full evidence ledgers and original absolute-path manifests remain in the ignored local output directory; committed copies replace the workspace root with <repo>."
+  ]
+}

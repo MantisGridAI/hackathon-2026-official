@@ -1,0 +1,6 @@
+{
+  "external_wall_s": 245.609,
+  "returncode": 0,
+  "peak_memory_bytes": null,
+  "resource_limit_status": "Windows venv launcher was monitored; actual interpreter child RSS/affinity not measured. Only external time and process exit are valid."
+}

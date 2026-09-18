@@ -1,0 +1,117 @@
+{
+  "experiment_id": "integration-resources-20260917",
+  "code_revision": "9acaa72914bfefcf2b07cd944bb98c1b38d4eb6d",
+  "source_hashes": {
+    "track-1/starter/cost.py": "74e5802bea5d36f4ed20ebbdce3c47b4cb2c31cb42d5641e540fdea9a70074a9",
+    "track-1/starter/llm.py": "f843e15534fd0e31abe5d3b20c5972ca2b6ab8c6b7634d526d03a9e5051a91db",
+    "track-1/starter/run.py": "c74e7a9d4c0832ad35cd5a5ad18bc0ee8a20893f7df9ef54be684311031794b9",
+    "track-1/starter/score.py": "37c4a07471a2af66a09251dbe1b51cfb42a1fadc49a0b627edd9125ba7424e31",
+    "track-1/starter/agents/heuristic.py": "b443ecd8f8a51faafd0fa319529a50e03df7cb6f3e3fbb6bafc829b6c1dbfe17",
+    "track-1/starter/agents/routed.py": "62a21afc81f2d38f42688f94c3b6f001537b6e52f017e9277d2c49d75fb594ac",
+    "track-1/starter/agents/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "track-1/starter/tests/__init__.py": "aa6388767c5685554af67b2ae1f22149769247470decdf5a8caefc86d7a192df",
+    "track-1/starter/agents/rca/contracts.py": "43bf5f48b93d4215716708a79cfbd24dea65cdf4620072446f2862882b8ba39c",
+    "track-1/starter/agents/rca/controller.py": "9a036f7a48f943d787d2a120182980460fa254ff52472f3f842a8f0a2b19ff0b",
+    "track-1/starter/agents/rca/data_access.py": "7512fc59d430ab101a3c31f356155adbdefadbd121269582db8c99fe2c4f51cd",
+    "track-1/starter/agents/rca/evidence.py": "4b25ab68e815abc53e055a3a35af401177cf1bd33984f402e6db770391d5983a",
+    "track-1/starter/agents/rca/logs.py": "041a7ab116124a8e166f5593cfdf95ec86ba9048e719421fe65c1f97b876d8f0",
+    "track-1/starter/agents/rca/metrics.py": "ef0358f6d46425e5c528aa60f904ebf36454633f7e4bc747eeeaedef5dc5822f",
+    "track-1/starter/agents/rca/network.py": "0d000bd4fbf333a8b649ce53dd2ac617fc0757db550a3468d0c6f81fc1d3267d",
+    "track-1/starter/agents/rca/onset.py": "0519baa090cf782277a2ffab5f97f4163469c58ba951db1654e5892113c3a0ef",
+    "track-1/starter/agents/rca/prompts.py": "f119efb4789fab51af7b5fbf34e9a85b95d496fbb7fdb9cd6d409c31af995c53",
+    "track-1/starter/agents/rca/ranking.py": "90f818a9689c06f102963fe7cdb173a99fb40c80f98fad13402ddf5a49769b29",
+    "track-1/starter/agents/rca/routing.py": "1d569e9fe37b1de1d81352a7312209f5b89c9a2e2e6820b1f1a458be8c0cc5cf",
+    "track-1/starter/agents/rca/runtime.py": "6699650de7bd9ad2729869e214a42cba8f2a4d246171bd831fd91858e687620d",
+    "track-1/starter/agents/rca/traces.py": "8759b120f493622e702ced2c55528dfaaf09d61742b1e8a49fad166c1964fbbc",
+    "track-1/starter/agents/rca/validation.py": "ad672c30b48d76960a28c42da91ba4567b7f1be85716f5ba960d769bd5cc1618",
+    "track-1/starter/agents/rca/__init__.py": "39deee12760275a716bc3977c37a41e19a3a0f1587d1cc8213cba8a7aad72eb8",
+    "track-1/starter/tests/fixtures/synthetic.py": "af7e790b167c7086832601f7decc767b6045a4cbee404b604f93a59d4bde4038",
+    "track-1/starter/tests/fixtures/__init__.py": "35849801e0f8a9c6494d60192583cae4c652d65e0fb33948546f383cab03508a",
+    "track-1/starter/tests/integration/test_end_to_end.py": "7efe1a25a059d5451b18f04718d2b96af5ffeaa64df31a5a3aec6759261a280f",
+    "track-1/starter/tests/integration/test_http_transport.py": "87531ed9a455bda23508794c1e1acf9bd14fda2110dd448c2613b9d986b872fc",
+    "track-1/starter/tests/integration/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "track-1/starter/tests/m1/test_real_store.py": "a9a336055a2fa757e08addb623a938b8873e18d095b61f39da85768058ee9466",
+    "track-1/starter/tests/m1/test_runtime_store.py": "a8e76bb11763aee0f1ae3ea309ba7a33e83fac24106476d4a8e014ab4039b6da",
+    "track-1/starter/tests/m1/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "track-1/starter/tests/m2/test_metrics.py": "31f686fad2430f7c575e52d81943e6d4e54f572ff6a653b41bb5b7ae5e8f6f29",
+    "track-1/starter/tests/m2/test_onset.py": "45b6c7e2deebcade5f2c41f0404b48f652e1efb776f355199694545993c154dc",
+    "track-1/starter/tests/m2/__init__.py": "0571f062ef4d60c3aaf571e58cd352d935f4f14b4ff8eadbb42ea408d073d9cf",
+    "track-1/starter/tests/m3/test_network.py": "1fe187ef30d6144da0751eaea615ae20106ea074734df42031882091682c1f07",
+    "track-1/starter/tests/m3/test_traces_logs.py": "e1fbbb55115f239d67cd7ef8c54466281223506deae01010b8c6fa2204b68a67",
+    "track-1/starter/tests/m3/__init__.py": "432fd80d60ab5209f3a7f3a7f43ec84712f6b95ade673e402cc74b1ff1909bd1",
+    "track-1/starter/tests/m4/helpers.py": "501fda2537fd04e6afa1e23d86a0b48fc6ec2c8f1810695a0d9b0c91413a099d",
+    "track-1/starter/tests/m4/test_controller.py": "19380c8766fdd62cb68bbd62f6374812dfc3cab8f411acf6ef523e640fd9c676",
+    "track-1/starter/tests/m4/test_ranking.py": "fca78a8900f43c1163463039ac5020f3a33fa1e2f3e40156d913f9e33f8557cf",
+    "track-1/starter/tests/m4/test_real_window.py": "0135c9f2996dfee71ee4b9d9544570a6d519554aa7b555021510bd19e966ff9b",
+    "track-1/starter/tests/m4/test_routing.py": "9082d198c597a73a6fb414f70576e3d13ec5a8dc52428d0db8b1fdae1601dbe1",
+    "track-1/starter/tests/m4/__init__.py": "791941b83ec2d18126e2708714ecb68341dee41e625f4f8fb94300933f017e91",
+    "track-1/starter/tests/m5/test_eval.py": "b8f68fd92bff9f0e844a7c1722873abea075f120c01b9b170f19437a244358c7",
+    "track-1/starter/tests/m5/test_validation.py": "979d4943e7d57ea798e1e3dc49d2b3370180bd96722c9887fbaeb47b3087a5fa",
+    "track-1/starter/tests/m5/__init__.py": "09bf078cc14b26d4c3433f5f36b23a6d2d59e3ca2d6116ec6d50d8fbfb1a36f3"
+  },
+  "config_id": "deterministic",
+  "config": {
+    "schema_version": "rca-v1",
+    "mode": "deterministic",
+    "pinned_model": null,
+    "reference_minutes": 10,
+    "case_soft_seconds": 45.0,
+    "run_soft_seconds": 1080.0,
+    "case_cost_limit_usd": 2.5,
+    "run_cost_limit_usd": 20.0,
+    "max_followups": 1,
+    "max_model_stages": 2,
+    "max_http_attempts_per_case": 4
+  },
+  "config_hash": "6529ab04f44ce58b07649c492e130e66919ec9062e132a49a2b5055512f7e4c4",
+  "planned_row_ids_in_order": [
+    0,
+    1
+  ],
+  "query_hash": "0a3e62b289386113c940395eba84127f8c20020f2de55b995c88c94e52bce958",
+  "repetition": 1,
+  "dataset_identity": {
+    "bundle": "official Market-cloudbed-1",
+    "manifest_sha256": "997866a8dc739b7162c7d91d64a1e837a13d778e1b969998a1bbd8dab286db7c"
+  },
+  "price_table_revision": "official track-1/starter/cost.py at code_revision",
+  "cache_condition": "fresh process/store; OS filesystem cache warm from module tests",
+  "hardware_limits": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.14",
+    "cpu_affinity": [
+      0,
+      1
+    ],
+    "memory_guard_bytes": 8589934592,
+    "docker": false
+  },
+  "tuning_status": "public development; first occurrence of each task plus first multi-failure case; no label-based selection",
+  "command": [
+    "C:\\Users\\liyua\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe",
+    "C:\\Users\\liyua\\Desktop\\hack\\track-1\\starter\\run.py",
+    "--dataset",
+    "C:\\Users\\liyua\\Desktop\\hack\\track-1\\data\\Market-cloudbed-1",
+    "--queries",
+    "C:\\Users\\liyua\\Desktop\\hack\\out\\integration-resources-20260917\\planned_queries.csv",
+    "--out",
+    "C:\\Users\\liyua\\Desktop\\hack\\out\\integration-resources-20260917\\run"
+  ],
+  "external_wall_s": 59.765,
+  "peak_rss_bytes": 261902336,
+  "exit_code": 0,
+  "resource_guard_terminated": false,
+  "cpu_affinity": [
+    0,
+    1
+  ],
+  "observed_processes": {
+    "39332": {
+      "executable": "C:\\Users\\liyua\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe",
+      "affinity": [
+        0,
+        1
+      ]
+    }
+  }
+}

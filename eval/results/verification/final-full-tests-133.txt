@@ -1,0 +1,8 @@
+{"real_query_index": 0, "candidates": 687, "evidence": 907, "coverage": ["complete", "complete", "complete"], "top_component": "frontend2-0"}
+{"budget_s": 30.0, "elapsed_s": 25.063, "real_trace_evidence": 401, "candidates": 4, "edges": 256, "coverage": ["partial", "partial"]}
+real second case: 28.922s; 1729 evidence records; 1 answers; zero model calls
+.....................................................................................................................................
+----------------------------------------------------------------------
+Ran 133 tests in 74.747s
+
+OK

@@ -1,0 +1,19 @@
+{
+  "external_wall_s": 59.765,
+  "peak_rss_bytes": 261902336,
+  "exit_code": 0,
+  "resource_guard_terminated": false,
+  "cpu_affinity": [
+    0,
+    1
+  ],
+  "observed_processes": {
+    "39332": {
+      "executable": "C:\\Users\\liyua\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe",
+      "affinity": [
+        0,
+        1
+      ]
+    }
+  }
+}

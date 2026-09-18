@@ -13,3 +13,18 @@ __pycache__/
 .DS_Store
 claims.json
 out/
+
+# Local credentials, telemetry archives and generated development artifacts.
+.env
+.env.*
+!.env.example
+*.zip
+*.tar.gz
+*.parquet
+*.pkl
+*.pickle
+data/
+processed/
+.pytest_cache/
+.ruff_cache/
+.worktrees/

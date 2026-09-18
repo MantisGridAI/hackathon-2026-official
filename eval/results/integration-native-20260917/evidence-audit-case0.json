@@ -1,0 +1,98 @@
+{
+  "schema_version": "evidence-audit.v1",
+  "ledger": "Original uncommitted run artifact: diagnostics/evidence/1.json",
+  "case_key": "677ec03203bed261",
+  "invocation_index": 1,
+  "records": 1704,
+  "sampling_method": "First N evidence IDs in lexicographic order within each transform, transforms sorted",
+  "samples_per_transform": 1,
+  "selected_count": 6,
+  "source_files_checked": {
+    "telemetry/2022_03_20/metric/metric_service.csv": true,
+    "telemetry/2022_03_20/metric/metric_container.csv": true,
+    "telemetry/2022_03_20/metric/metric_node.csv": true,
+    "telemetry/2022_03_20/trace/trace_span.csv": true
+  },
+  "dangling_evidence_ids": [],
+  "integrity_errors": [],
+  "sampled_records": [
+    {
+      "evidence_id": "m2.evidence:001dca9106cdb292",
+      "transform": "metrics.baseline_compare.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 3,
+        "found": 3
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    },
+    {
+      "evidence_id": "m2.evidence:9e11f8a44bd9001b",
+      "transform": "metrics.replica_node_compare.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 4,
+        "found": 4
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    },
+    {
+      "evidence_id": "m2.evidence:03e7176009a27f99",
+      "transform": "metrics.service_summary.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 3,
+        "found": 3
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    },
+    {
+      "evidence_id": "m3.evidence:00f5ebc4abe3eacd",
+      "transform": "network.start_gap_compare.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 8,
+        "found": 8
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    },
+    {
+      "evidence_id": "m3.evidence:004c47cc9129a69a",
+      "transform": "traces.group_compare.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 8,
+        "found": 8
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    },
+    {
+      "evidence_id": "m3.evidence:fa2f9e9fcd839200",
+      "transform": "traces.pairing_quality.v1",
+      "status": "verified",
+      "values_match": true,
+      "source_locators": {
+        "status": "verified",
+        "required": 8,
+        "found": 8
+      },
+      "units_status": "Declared units preserved; physical unit semantics require separate review"
+    }
+  ],
+  "values_tolerance": {
+    "relative": 1e-10,
+    "absolute": 1e-12
+  },
+  "all_sampled_verified": true,
+  "causal_inference_review": "Not performed. Record/replay verification does not establish causal support."
+}

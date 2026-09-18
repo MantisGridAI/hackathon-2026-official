@@ -1,0 +1,16 @@
+row_id,prediction,task_index,wall_s,prompt_tokens,completion_tokens,calls
+0,"```json
+{
+    ""1"": {
+        ""root cause component"": ""emailservice-1"",
+        ""root cause reason"": ""container CPU load""
+    }
+}
+```",task_6,29.37,0,0,0
+1,"```json
+{
+    ""1"": {
+        ""root cause occurrence datetime"": ""2022-03-20 09:44:30""
+    }
+}
+```",task_1,29.79,0,0,0
